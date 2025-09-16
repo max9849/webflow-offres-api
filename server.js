@@ -7,24 +7,26 @@ const PORT = process.env.PORT || 8080;
 
 app.use(express.json());
 
-// Health check
+// Endpoint test
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Ajouter une offre (Webflow API v1)
+// Endpoint pour créer une offre (API v1)
 app.post('/api/offres', async (req, res) => {
   try {
-    const { title, description, location, publish } = req.body;
+    const { title, slug, description, publish } = req.body;
 
     if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
+      return res.status(400).json({ error: 'Title (Post) is required' });
     }
 
     const payload = {
       fields: {
-        name: title,
-        description: description || '',
-        location: location || '',
-        slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80),
+        name: title, // champ "Post"
+        slug: (slug && slug.length > 0
+          ? slug
+          : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)),
+        "description-du-poste": description || "",
+        "pdf-pour-les-detailles": "", // vide pour l’instant
         _archived: false,
         _draft: !publish
       }
