@@ -1,16 +1,29 @@
 import 'dotenv/config';
 import express from 'express';
 import axios from 'axios';
+import cors from 'cors';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// ✅ Autoriser uniquement les domaines spécifiés
+const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",");
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS: " + origin));
+    }
+  }
+}));
+
 app.use(express.json());
 
-// ✅ Endpoint test
+// Endpoint test
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// ✅ Endpoint pour créer une offre (API v1)
+// Endpoint pour créer une offre (API v1)
 app.post('/api/offres', async (req, res) => {
   try {
     const { title, slug, description, publish } = req.body;
@@ -21,18 +34,18 @@ app.post('/api/offres', async (req, res) => {
 
     const payload = {
       fields: {
-        name: title, // champ "Post"
+        name: title, 
         slug: (slug && slug.length > 0
           ? slug
           : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)),
         "description-du-poste": description || "",
-        "pdf-pour-les-detailles": "", // vide pour l’instant
+        "pdf-pour-les-detailles": "",
         _archived: false,
         _draft: !publish
       }
     };
 
-    console.log("📩 Payload envoyé à Webflow:", JSON.stringify(payload, null, 2));
+    console.log("📩 Payload envoyé:", payload);
 
     const url = `https://api.webflow.com/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
 
