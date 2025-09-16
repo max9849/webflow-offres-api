@@ -7,10 +7,10 @@ const PORT = process.env.PORT || 8080;
 
 app.use(express.json());
 
-// Endpoint test
+// ✅ Endpoint test
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// Endpoint pour créer une offre (API v1)
+// ✅ Endpoint pour créer une offre (API v1)
 app.post('/api/offres', async (req, res) => {
   try {
     const { title, slug, description, publish } = req.body;
@@ -32,6 +32,8 @@ app.post('/api/offres', async (req, res) => {
       }
     };
 
+    console.log("📩 Payload envoyé à Webflow:", JSON.stringify(payload, null, 2));
+
     const url = `https://api.webflow.com/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
 
     const { data } = await axios.post(url, payload, {
@@ -42,9 +44,12 @@ app.post('/api/offres', async (req, res) => {
       }
     });
 
+    console.log("✅ Réponse Webflow:", data);
+
     res.status(201).json({ ok: true, item: data });
   } catch (err) {
-    console.error(err?.response?.data || err.message);
+    console.error("❌ Erreur Webflow :", err?.response?.data || err.message);
+
     res.status(500).json({
       error: 'Webflow API v1 error',
       details: err?.response?.data || err.message
