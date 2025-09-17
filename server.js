@@ -6,11 +6,20 @@ import cors from 'cors';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// ✅ Autorise ton site Webflow à appeler ton API
 app.use(cors({
-  origin: ["https://valrjob.ch", "https://www.valrjob.ch"],
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
+  origin: [
+    "https://valrjob.ch",
+    "https://www.valrjob.ch",
+    "https://preview.webflow.com" // utile pour tester dans l'éditeur Webflow
+  ],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+// Gérer aussi les preflight requests
+app.options('*', cors());
+
 app.use(express.json());
 
 // ✅ Endpoint test
@@ -25,6 +34,7 @@ app.post('/api/offres', async (req, res) => {
       return res.status(400).json({ error: 'Title is required' });
     }
 
+    // ⚠️ Remplace "description-du-poste" par l'API Field Name EXACT
     const payload = {
       fields: {
         name: title,
@@ -49,6 +59,7 @@ app.post('/api/offres', async (req, res) => {
       }
     });
 
+    console.log("✅ Webflow v1 response:", data);
     res.status(201).json({ ok: true, item: data });
   } catch (err) {
     console.error("❌ Erreur Webflow v1:", err?.response?.data || err.message);
