@@ -6,48 +6,40 @@ import cors from 'cors';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// ✅ Autoriser uniquement les domaines spécifiés
-const allowedOrigins = (process.env.CORS_ORIGIN || "").split(",");
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS: " + origin));
-    }
-  }
+  origin: ["https://valrjob.ch", "https://www.valrjob.ch"],
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
 }));
-
 app.use(express.json());
 
-// Endpoint test
-app.get('/health', (req, res) => res.json({ ok: true }));
+// ✅ Endpoint test
+app.get('/health', (req, res) => res.json({ ok: true, api: "v1" }));
 
-// Endpoint pour créer une offre (API v1)
+// ✅ Créer une offre (API v1)
 app.post('/api/offres', async (req, res) => {
   try {
     const { title, slug, description, publish } = req.body;
 
     if (!title) {
-      return res.status(400).json({ error: 'Title (Post) is required' });
+      return res.status(400).json({ error: 'Title is required' });
     }
 
     const payload = {
       fields: {
-        name: title, 
+        name: title,
         slug: (slug && slug.length > 0
           ? slug
           : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)),
         "description-du-poste": description || "",
-        "pdf-pour-les-detailles": "",
         _archived: false,
         _draft: !publish
       }
     };
 
-    console.log("📩 Payload envoyé:", payload);
-
     const url = `https://api.webflow.com/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
+
+    console.log("📩 Payload envoyé à Webflow v1:", JSON.stringify(payload, null, 2));
 
     const { data } = await axios.post(url, payload, {
       headers: {
@@ -57,12 +49,9 @@ app.post('/api/offres', async (req, res) => {
       }
     });
 
-    console.log("✅ Réponse Webflow:", data);
-
     res.status(201).json({ ok: true, item: data });
   } catch (err) {
-    console.error("❌ Erreur Webflow :", err?.response?.data || err.message);
-
+    console.error("❌ Erreur Webflow v1:", err?.response?.data || err.message);
     res.status(500).json({
       error: 'Webflow API v1 error',
       details: err?.response?.data || err.message
