@@ -1,71 +1,59 @@
-import 'dotenv/config';
-import express from 'express';
-import axios from 'axios';
-import cors from 'cors';
-
-const app = express();
-const PORT = process.env.PORT || 8080;
-
-app.use(cors({
-  origin: ["https://valrjob.ch", "https://www.valrjob.ch", "https://preview.webflow.com"],
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"]
-}));
-app.options('*', cors());
-app.use(express.json());
-
-app.get('/health', (req, res) => res.json({ ok: true, api: "v2" }));
-
-app.post('/api/offres', async (req, res) => {
+// 🔎 List published offers (proxy, v2)
+app.get('/api/offres', async (req, res) => {
   try {
-    const { title, slug, description, publish } = req.body;
-    if (!title) return res.status(400).json({ error: 'Title is required' });
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+    const url = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items?limit=${limit}`;
 
-    // ⚠️ Mets ici l’API Field Name EXACT du champ description depuis Webflow (GET /v2/collections/{id})
-    const fieldData = {
-      name: title,
-      slug: (slug && slug.length > 0
-        ? slug
-        : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)),
-      "description-du-poste": description || ""
-    };
-
-    const base = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
-
-    // publish ? créer LIVE (direct visible) : créer en brouillon (staged)
-    const url = publish ? `${base}/live` : base;
-    const payload = publish
-      ? { // Create Live Item(s) → nécessite un tableau "items"
-          items: [{
-            isArchived: false,
-            isDraft: false,
-            fieldData
-          }]
-        }
-      : { // Create staged (non publié)
-          isArchived: false,
-          isDraft: true,
-          fieldData
-        };
-
-    console.log("➡️ POST", url);
-    console.log("📩 Payload:", JSON.stringify(payload, null, 2));
-
-    const { data } = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Bearer ${process.env.WEBFLOW_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
+    const { data } = await axios.get(url, {
+      headers: { Authorization: `Bearer ${process.env.WEBFLOW_TOKEN}` }
     });
 
-    const result = data?.items ?? data; // /live renvoie { items:[...] }, /items renvoie l'item
-    return res.status(201).json({ ok: true, mode: publish ? "live" : "staged", item: result });
+    const items = (data?.items || [])
+      .filter(i => !i.isDraft && !i.isArchived)
+      .map(i => ({
+        id: i.id,
+        name: i.fieldData?.name,
+        slug: i.fieldData?.slug,
+        description: i.fieldData?.['description-du-poste'] || ''
+      }));
 
+    res.json({ ok: true, count: items.length, items });
   } catch (err) {
-    const details = err?.response?.data || err.message;
-    console.error("❌ Webflow v2 error:", details);
-    return res.status(500).json({ error: 'Webflow API v2 error', details });
+    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
   }
 });
 
-app.listen(PORT, () => console.log(`✅ API v2 server running on port ${PORT}`));
+// 🔎 Get ONE live item by ID (proxy, v2)
+app.get('/api/offres/:itemId', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const url = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items/${itemId}/live`;
+
+    const { data } = await axios.get(url, {
+      headers: { Authorization: `Bearer ${process.env.WEBFLOW_TOKEN}` }
+    });
+
+    res.json({ ok: true, item: data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
+  }
+});
+
+// 🔎 (Optional) Get one item by slug (handy for detail pages)
+app.get('/api/offres-by-slug/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const url = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items?limit=100`;
+
+    const { data } = await axios.get(url, {
+      headers: { Authorization: `Bearer ${process.env.WEBFLOW_TOKEN}` }
+    });
+
+    const item = (data?.items || []).find(i => i.fieldData?.slug === slug && !i.isDraft && !i.isArchived);
+    if (!item) return res.status(404).json({ ok: false, error: 'Item not found' });
+
+    res.json({ ok: true, item });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
+  }
+});
