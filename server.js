@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(cors({
-  origin: ["https://valrjob.ch", "https://www.valrjob.ch"],
+  origin: ["https://valrjob.ch", "https://www.valrjob.ch", "https://preview.webflow.com"],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"]
 }));
@@ -16,62 +16,63 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ ok: true, api: "v2" }));
 
-// ✅ Créer + publier automatiquement
 app.post('/api/offres', async (req, res) => {
   try {
     const { title, slug, description, publish } = req.body;
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
-    // 1) Créer l’item
-    const createUrl = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
-    const createPayload = {
-      isArchived: false,
-      isDraft: !publish, // si publish=true → draft=false
-      fieldData: {
-        name: title,
-        slug: slug && slug.length > 0
-          ? slug
-          : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80),
-        "description-du-poste": description || "" // ⚠️ adapter au vrai API Field Name
-      }
+    const fieldData = {
+      name: title,
+      slug: (slug && slug.length > 0
+        ? slug
+        : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)),
+      // ⚠️ remplace par l’API Field Name exact dans ta collection :
+      "description-du-poste": description || ""
     };
 
-    const createRes = await axios.post(createUrl, createPayload, {
+    const base = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
+
+    // 👉 publish ? on crée en LIVE, sinon on crée en brouillon
+    const url = publish ? `${base}/live` : base;
+    const payload = publish
+      ? {                    // Create Live Item(s)
+          items: [{
+            isArchived: false,
+            isDraft: false,
+            fieldData
+          }]
+        }
+      : {                    // Create (staged) Item
+          isArchived: false,
+          isDraft: true,     // reste brouillon si publish=false
+          fieldData
+        };
+
+    console.log("➡️  POST", url);
+    console.log("📩 Payload:", JSON.stringify(payload, null, 2));
+
+    const { data } = await axios.post(url, payload, {
       headers: {
         Authorization: `Bearer ${process.env.WEBFLOW_TOKEN}`,
         'Content-Type': 'application/json'
       }
     });
 
-    const createdItem = createRes.data;
-    const createdItemId = createdItem?.id;
-
-    // 2) Publier immédiatement si demandé
-    let publishResult = null;
-    if (publish && createdItemId) {
-      const publishUrl = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items/publish`;
-      const publishPayload = { itemIds: [createdItemId] };
-
-      publishResult = await axios.post(publishUrl, publishPayload, {
-        headers: {
-          Authorization: `Bearer ${process.env.WEBFLOW_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      });
-    }
+    // Réponses différentes selon endpoint :
+    // - /items/live retourne un objet avec items ou un item (selon doc: items array)
+    // - /items retourne un item (single)
+    const result = data?.items ?? data;
 
     return res.status(201).json({
       ok: true,
-      createdItem,
-      published: Boolean(publishResult)
+      mode: publish ? "live" : "staged",
+      item: result
     });
 
   } catch (err) {
-    console.error("❌ Webflow v2 publish error:", err?.response?.data || err.message);
-    return res.status(500).json({
-      error: 'Webflow API v2 error',
-      details: err?.response?.data || err.message
-    });
+    const details = err?.response?.data || err.message;
+    console.error("❌ Webflow v2 error:", details);
+    return res.status(500).json({ error: 'Webflow API v2 error', details });
   }
 });
 
