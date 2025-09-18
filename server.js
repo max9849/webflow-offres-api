@@ -21,34 +21,34 @@ app.post('/api/offres', async (req, res) => {
     const { title, slug, description, publish } = req.body;
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
+    // ⚠️ Mets ici l’API Field Name EXACT du champ description depuis Webflow (GET /v2/collections/{id})
     const fieldData = {
       name: title,
       slug: (slug && slug.length > 0
         ? slug
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)),
-      // ⚠️ remplace par l’API Field Name exact dans ta collection :
       "description-du-poste": description || ""
     };
 
     const base = `https://api.webflow.com/v2/collections/${process.env.WEBFLOW_COLLECTION_ID}/items`;
 
-    // 👉 publish ? on crée en LIVE, sinon on crée en brouillon
+    // publish ? créer LIVE (direct visible) : créer en brouillon (staged)
     const url = publish ? `${base}/live` : base;
     const payload = publish
-      ? {                    // Create Live Item(s)
+      ? { // Create Live Item(s) → nécessite un tableau "items"
           items: [{
             isArchived: false,
             isDraft: false,
             fieldData
           }]
         }
-      : {                    // Create (staged) Item
+      : { // Create staged (non publié)
           isArchived: false,
-          isDraft: true,     // reste brouillon si publish=false
+          isDraft: true,
           fieldData
         };
 
-    console.log("➡️  POST", url);
+    console.log("➡️ POST", url);
     console.log("📩 Payload:", JSON.stringify(payload, null, 2));
 
     const { data } = await axios.post(url, payload, {
@@ -58,16 +58,8 @@ app.post('/api/offres', async (req, res) => {
       }
     });
 
-    // Réponses différentes selon endpoint :
-    // - /items/live retourne un objet avec items ou un item (selon doc: items array)
-    // - /items retourne un item (single)
-    const result = data?.items ?? data;
-
-    return res.status(201).json({
-      ok: true,
-      mode: publish ? "live" : "staged",
-      item: result
-    });
+    const result = data?.items ?? data; // /live renvoie { items:[...] }, /items renvoie l'item
+    return res.status(201).json({ ok: true, mode: publish ? "live" : "staged", item: result });
 
   } catch (err) {
     const details = err?.response?.data || err.message;
