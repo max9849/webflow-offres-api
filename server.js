@@ -10,8 +10,7 @@ const PORT = process.env.PORT || 8080;
 app.use(cors({
   origin: [
     'https://valrjob.ch',
-    'https://www.valrjob.ch',
-    'https://preview.webflow.com'
+    'https://www.valrjob.ch'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
@@ -25,7 +24,7 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, api: 'v2' });
 });
 
-/** Vérifie les variables d’env */
+/** Vérifie les variables d'env */
 function requireEnv(name) {
   const val = process.env[name];
   if (!val) throw new Error(`Missing env: ${name}`);
@@ -50,8 +49,14 @@ app.get('/api/offres', async (req, res) => {
       id: i.id,
       name: i.fieldData?.name || '',
       slug: i.fieldData?.slug || '',
-      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
-      description: i.fieldData?.['description-du-poste'] || ''
+      description: i.fieldData?.['description-du-poste'] || '',
+      company: i.fieldData?.['nom-de-lentreprise'] || '',
+      location: i.fieldData?.lieu || '',
+      type: i.fieldData?.['type-de-contrat'] || '',
+      salary: i.fieldData?.salaire || '',
+      date: i.fieldData?.date || '',
+      image: i.fieldData?.image ? (Array.isArray(i.fieldData.image) ? i.fieldData.image[0]?.url : i.fieldData.image.url) : '',
+      pdf: i.fieldData?.fichier ? i.fieldData.fichier.url : ''
     }));
 
     res.json({ ok: true, count: items.length, items, pagination: { limit, offset } });
@@ -75,7 +80,6 @@ app.post('/api/offres', async (req, res) => {
       slug: (slug && slug.length > 0
         ? slug
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)),
-      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
       "description-du-poste": description || ""
     };
 
@@ -124,7 +128,21 @@ app.get('/api/offres/:itemId', async (req, res) => {
       headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
     });
 
-    res.json({ ok: true, item: data });
+    const formattedItem = {
+      id: data.id,
+      name: data.fieldData?.name || '',
+      slug: data.fieldData?.slug || '',
+      description: data.fieldData?.['description-du-poste'] || '',
+      company: data.fieldData?.['nom-de-lentreprise'] || '',
+      location: data.fieldData?.lieu || '',
+      type: data.fieldData?.['type-de-contrat'] || '',
+      salary: data.fieldData?.salaire || '',
+      date: data.fieldData?.date || '',
+      image: data.fieldData?.image ? (Array.isArray(data.fieldData.image) ? data.fieldData.image[0]?.url : data.fieldData.image.url) : '',
+      pdf: data.fieldData?.fichier ? data.fieldData.fichier.url : ''
+    };
+
+    res.json({ ok: true, item: formattedItem });
   } catch (err) {
     console.error('GET /api/offres/:itemId error:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
@@ -147,7 +165,21 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
     const item = (data?.items || []).find(i => i.fieldData?.slug === slug);
     if (!item) return res.status(404).json({ ok: false, error: 'Item not found' });
 
-    res.json({ ok: true, item });
+    const formattedItem = {
+      id: item.id,
+      name: item.fieldData?.name || '',
+      slug: item.fieldData?.slug || '',
+      description: item.fieldData?.['description-du-poste'] || '',
+      company: item.fieldData?.['nom-de-lentreprise'] || '',
+      location: item.fieldData?.lieu || '',
+      type: item.fieldData?.['type-de-contrat'] || '',
+      salary: item.fieldData?.salaire || '',
+      date: item.fieldData?.date || '',
+      image: item.fieldData?.image ? (Array.isArray(item.fieldData.image) ? item.fieldData.image[0]?.url : item.fieldData.image.url) : '',
+      pdf: item.fieldData?.fichier ? item.fieldData.fichier.url : ''
+    };
+
+    res.json({ ok: true, item: formattedItem });
   } catch (err) {
     console.error('GET /api/offres-by-slug/:slug error:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
