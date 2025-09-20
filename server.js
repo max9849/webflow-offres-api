@@ -10,7 +10,8 @@ const PORT = process.env.PORT || 8080;
 app.use(cors({
   origin: [
     'https://valrjob.ch',
-    'https://www.valrjob.ch'
+    'https://www.valrjob.ch',
+    'https://preview.webflow.com'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
@@ -49,14 +50,8 @@ app.get('/api/offres', async (req, res) => {
       id: i.id,
       name: i.fieldData?.name || '',
       slug: i.fieldData?.slug || '',
-      description: i.fieldData?.['description-du-poste'] || '',
-      company: i.fieldData?.['nom-de-lentreprise'] || '',
-      location: i.fieldData?.lieu || '',
-      type: i.fieldData?.['type-de-contrat'] || '',
-      salary: i.fieldData?.salaire || '',
-      date: i.fieldData?.date || '',
-      image: i.fieldData?.image ? (Array.isArray(i.fieldData.image) ? i.fieldData.image[0]?.url : i.fieldData.image.url) : '',
-      pdf: i.fieldData?.fichier ? i.fieldData.fichier.url : ''
+      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
+      description: i.fieldData?.['description-du-poste'] || ''
     }));
 
     res.json({ ok: true, count: items.length, items, pagination: { limit, offset } });
@@ -80,6 +75,7 @@ app.post('/api/offres', async (req, res) => {
       slug: (slug && slug.length > 0
         ? slug
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)),
+      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
       "description-du-poste": description || ""
     };
 
@@ -128,6 +124,7 @@ app.get('/api/offres/:itemId', async (req, res) => {
       headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
     });
 
+    // AJOUT : Formatage avec tous les champs
     const formattedItem = {
       id: data.id,
       name: data.fieldData?.name || '',
@@ -165,6 +162,7 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
     const item = (data?.items || []).find(i => i.fieldData?.slug === slug);
     if (!item) return res.status(404).json({ ok: false, error: 'Item not found' });
 
+    // AJOUT : Formatage avec tous les champs
     const formattedItem = {
       id: item.id,
       name: item.fieldData?.name || '',
