@@ -13,7 +13,7 @@ app.use(cors({
     'https://www.valrjob.ch',
     'https://preview.webflow.com'
   ],
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 app.options('*', cors());
@@ -50,8 +50,13 @@ app.get('/api/offres', async (req, res) => {
       id: i.id,
       name: i.fieldData?.name || '',
       slug: i.fieldData?.slug || '',
-      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
-      description: i.fieldData?.['description-du-poste'] || ''
+      description: i.fieldData?.['description-du-poste'] || '',
+      company: i.fieldData?.['nom-de-lentreprise'] || '',
+      location: i.fieldData?.lieu || '',
+      type: i.fieldData?.['type-de-contrat'] || '',
+      salary: i.fieldData?.salaire || '',
+      published: !i.isDraft,
+      new: i.fieldData?.nouveau || false
     }));
 
     res.json({ ok: true, count: items.length, items, pagination: { limit, offset } });
@@ -75,7 +80,6 @@ app.post('/api/offres', async (req, res) => {
       slug: (slug && slug.length > 0
         ? slug
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)),
-      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
       "description-du-poste": description || ""
     };
 
@@ -111,6 +115,69 @@ app.post('/api/offres', async (req, res) => {
   }
 });
 
+/** ✏️ MODIFIER UNE OFFRE EXISTANTE */
+app.put('/api/offres/:itemId', async (req, res) => {
+  try {
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+    const { itemId } = req.params;
+    const { title, slug, description, publish } = req.body || {};
+
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+
+    const fieldData = {
+      name: title,
+      slug: (slug && slug.length > 0
+        ? slug
+        : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)),
+      "description-du-poste": description || ""
+    };
+
+    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
+
+    const payload = {
+      isArchived: false,
+      isDraft: !publish,
+      fieldData
+    };
+
+    const { data } = await axios.patch(url, payload, {
+      headers: {
+        Authorization: `Bearer ${WEBFLOW_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({ ok: true, message: 'Offre mise à jour avec succès', item: data });
+  } catch (err) {
+    console.error('PUT /api/offres/:itemId error:', err?.response?.data || err.message);
+    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
+  }
+});
+
+/** 🗑️ SUPPRIMER UNE OFFRE */
+app.delete('/api/offres/:itemId', async (req, res) => {
+  try {
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+    const { itemId } = req.params;
+
+    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
+
+    await axios.delete(url, {
+      headers: {
+        Authorization: `Bearer ${WEBFLOW_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json({ ok: true, message: 'Offre supprimée avec succès' });
+  } catch (err) {
+    console.error('DELETE /api/offres/:itemId error:', err?.response?.data || err.message);
+    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
+  }
+});
+
 /** 🔎 OBTENIR UN ITEM PAR ID (live) */
 app.get('/api/offres/:itemId', async (req, res) => {
   try {
@@ -124,7 +191,6 @@ app.get('/api/offres/:itemId', async (req, res) => {
       headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
     });
 
-    // AJOUT : Formatage avec tous les champs
     const formattedItem = {
       id: data.id,
       name: data.fieldData?.name || '',
@@ -162,7 +228,6 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
     const item = (data?.items || []).find(i => i.fieldData?.slug === slug);
     if (!item) return res.status(404).json({ ok: false, error: 'Item not found' });
 
-    // AJOUT : Formatage avec tous les champs
     const formattedItem = {
       id: item.id,
       name: item.fieldData?.name || '',
