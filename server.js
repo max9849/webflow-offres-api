@@ -48,13 +48,14 @@ app.get('/api/offres', async (req, res) => {
       name: i.fieldData?.post || '',
       slug: i.fieldData?.slug || '',
       description: i.fieldData?.['description-du-poste'] || '',
-      company: i.fieldData?.['nom-de-lentreprise'] || '',
+      company: i.fieldData?.['nom-de-lentreprise'] || '',  // Correction du nom
       location: i.fieldData?.lieu || '',
       type: i.fieldData?.['type-de-contrat'] || '',
       salary: i.fieldData?.salaire || '',
       email: i.fieldData?.email || '',
       telephone: i.fieldData?.téléphone || '',
       address: i.fieldData?.adresse || '',
+      profile: i.fieldData?.['profil-rechercher'] || '',  // Nouveau champ
       published: !i.isDraft
     }));
 
@@ -77,7 +78,8 @@ app.post('/api/offres', async (req, res) => {
       return res.status(400).json({ error: 'Title is required' });
     }
 
-    // Génère un slug si non fourni
+    // Génère un slug UNIQUE (requis par Webflow)
+    const timestamp = Date.now();
     const generatedSlug = slug && slug.length > 0
       ? slug
       : title.toLowerCase()
@@ -90,19 +92,21 @@ app.post('/api/offres', async (req, res) => {
           .replace(/[çć]/g, 'c')
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-+|-+$/g, '')
-          .slice(0, 80);
+          .slice(0, 60) + '-' + timestamp;  // Ajout timestamp pour unicité
 
+    // Structure exacte des champs selon votre collection Webflow
     const fieldData = {
       post: title,
-      slug: generatedSlug,
-      "description-du-poste": description || "",
+      slug: generatedSlug,  // OBLIGATOIRE
       "nom-de-lentreprise": company || "",
-      lieu: location || "",
+      "lieu": location || "",
       "type-de-contrat": type || "",
-      salaire: salary || "",
-      email: email || "",
-      téléphone: telephone || "",
-      adresse: address || ""
+      "description-du-poste": description || "",
+      "email": email || "",
+      "téléphone": telephone || "",
+      "adresse": address || "",
+      "salaire": salary || "",
+      "profil-rechercher": ""  // Nouveau champ Rich text
     };
 
     // Si publish est true, on crée et publie directement
@@ -184,25 +188,20 @@ app.put('/api/offres/:itemId', async (req, res) => {
           .slice(0, 80) + '-' + Date.now()); // Ajout d'un timestamp pour éviter les doublons
 
     // Construction du fieldData avec validation
+    // IMPORTANT: slug est OBLIGATOIRE dans Webflow
     const fieldData = {
       post: title.trim(),
-      slug: generatedSlug
+      slug: generatedSlug,  // Requis par Webflow
+      "nom-de-lentreprise": company || "",
+      "lieu": location || "",
+      "type-de-contrat": type || "",
+      "description-du-poste": description || "",
+      "email": email || "",
+      "téléphone": telephone || "",
+      "adresse": address || "",
+      "salaire": salary || "",
+      "profil-rechercher": ""  // Nouveau champ dans votre collection
     };
-
-    // Ajout conditionnel des champs optionnels (seulement s'ils ont une valeur)
-    if (description && description.trim()) fieldData["description-du-poste"] = description.trim();
-    if (company && company.trim()) fieldData["nom-de-lentreprise"] = company.trim();
-    if (location && location.trim()) fieldData["lieu"] = location.trim();
-    if (type && type.trim()) fieldData["type-de-contrat"] = type.trim();
-    if (salary && salary.trim()) fieldData["salaire"] = salary.trim();
-    if (email && email.trim()) fieldData["email"] = email.trim();
-    if (address && address.trim()) fieldData["adresse"] = address.trim();
-    
-    // Format spécial pour le téléphone (enlever les espaces et caractères spéciaux)
-    if (telephone && telephone.trim()) {
-      const cleanPhone = telephone.replace(/[^\d+]/g, '');
-      if (cleanPhone) fieldData["téléphone"] = cleanPhone;
-    }
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
 
