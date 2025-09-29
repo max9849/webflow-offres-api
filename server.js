@@ -154,9 +154,15 @@ app.put('/api/offres/:itemId', async (req, res) => {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     const { itemId } = req.params;
+    
+    console.log('=== PUT REQUEST ===');
+    console.log('Item ID:', itemId);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     const { title, slug, description, company, location, type, salary, email, telephone, address, publish } = req.body || {};
 
     if (!title) {
+      console.log('ERROR: Title is missing');
       return res.status(400).json({ ok: false, error: 'Title is required' });
     }
 
@@ -183,6 +189,9 @@ app.put('/api/offres/:itemId', async (req, res) => {
       fieldData
     };
 
+    console.log('Webflow URL:', url);
+    console.log('Payload to Webflow:', JSON.stringify(payload, null, 2));
+
     const { data } = await axios.patch(url, payload, {
       headers: {
         Authorization: `Bearer ${WEBFLOW_TOKEN}`,
@@ -190,10 +199,20 @@ app.put('/api/offres/:itemId', async (req, res) => {
       }
     });
 
+    console.log('✅ Success! Webflow response:', JSON.stringify(data, null, 2));
     res.json({ ok: true, message: 'Offre mise à jour avec succès', item: data });
   } catch (err) {
-    console.error('PUT /api/offres/:itemId error:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
+    console.error('❌ PUT ERROR - Full error:', err);
+    console.error('❌ Response data:', err?.response?.data);
+    console.error('❌ Response status:', err?.response?.status);
+    console.error('❌ Response headers:', err?.response?.headers);
+    
+    res.status(500).json({ 
+      ok: false, 
+      error: 'Erreur lors de la modification',
+      details: err?.response?.data || err.message,
+      statusCode: err?.response?.status
+    });
   }
 });
 
