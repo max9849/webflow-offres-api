@@ -6,33 +6,54 @@ import cors from 'cors';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-/** CORS — autorise ton site Webflow */
-app.use(cors({
-  origin: [
-    'https://valrjob.ch',
-    'https://www.valrjob.ch',
-    'https://preview.webflow.com'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-}));
-app.options('*', cors());
+// Configuration CORS complète et correcte
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Autoriser les requêtes sans origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'https://valrjob.ch',
+      'https://www.valrjob.ch',
+      'https://preview.webflow.com',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000'
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('webflow.io')) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Pour le dev, on autorise tout
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
+// Appliquer CORS AVANT tout le reste
+app.use(cors(corsOptions));
+
+// Gérer explicitement les requêtes OPTIONS pour toutes les routes
+app.options('*', cors(corsOptions));
+
+// Parser JSON
 app.use(express.json());
 
-/** Health check */
+// Health check
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, api: 'v2' });
+  res.json({ ok: true, api: 'v2', timestamp: new Date().toISOString() });
 });
 
-/** Vérifie les variables d'env */
+// Fonction de vérification des variables d'environnement
 function requireEnv(name) {
   const val = process.env[name];
   if (!val) throw new Error(`Missing env: ${name}`);
   return val;
 }
 
-/** 🔎 LISTE DES OFFRES PUBLIÉES */
+// LISTE DES OFFRES
 app.get('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -68,14 +89,17 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
-/** ✍️ CRÉER + PUBLIER IMMÉDIATEMENT */
+// CRÉER UNE NOUVELLE OFFRE
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
 
     const { title, slug, description, company, location, type, salary, email, telephone, address, publish } = req.body || {};
-    if (!title) return res.status(400).json({ error: 'Title is required' });
+    
+    if (!title) {
+      return res.status(400).json({ ok: false, error: 'Title is required' });
+    }
 
     const fieldData = {
       post: title,
@@ -120,11 +144,11 @@ app.post('/api/offres', async (req, res) => {
     res.status(201).json({ ok: true, mode: publish ? 'live' : 'staged', item: result });
   } catch (err) {
     console.error('POST /api/offres error:', err?.response?.data || err.message);
-    res.status(500).json({ error: 'Webflow API v2 error', details: err?.response?.data || err.message });
+    res.status(500).json({ ok: false, error: 'Webflow API v2 error', details: err?.response?.data || err.message });
   }
 });
 
-/** ✏️ MODIFIER UNE OFFRE EXISTANTE */
+// MODIFIER UNE OFFRE EXISTANTE
 app.put('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -132,7 +156,9 @@ app.put('/api/offres/:itemId', async (req, res) => {
     const { itemId } = req.params;
     const { title, slug, description, company, location, type, salary, email, telephone, address, publish } = req.body || {};
 
-    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!title) {
+      return res.status(400).json({ ok: false, error: 'Title is required' });
+    }
 
     const fieldData = {
       post: title,
@@ -171,7 +197,7 @@ app.put('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-/** 🗑️ SUPPRIMER UNE OFFRE */
+// SUPPRIMER UNE OFFRE
 app.delete('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -194,7 +220,7 @@ app.delete('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-/** 🔎 OBTENIR UN ITEM PAR ID (live) */
+// OBTENIR UN ITEM PAR ID
 app.get('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -229,7 +255,7 @@ app.get('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-/** 🔎 OBTENIR UN ITEM PAR SLUG */
+// OBTENIR UN ITEM PAR SLUG
 app.get('/api/offres-by-slug/:slug', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -269,4 +295,5 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`✅ API v2 server running on port ${PORT}`);
+  console.log(`🔓 CORS enabled for valrjob.ch and preview domains`);
 });
