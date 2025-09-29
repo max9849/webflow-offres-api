@@ -152,14 +152,26 @@ app.put('/api/offres/:itemId', async (req, res) => {
     
     const { title, slug, description, company, location, type, salary, email, telephone, address, publish } = req.body || {};
 
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
+    if (!title || title.trim() === '') {
+      return res.status(400).json({ error: 'Le titre est obligatoire' });
     }
 
-    // Génère un slug si non fourni
+    // D'abord, récupérons l'item existant pour obtenir son slug actuel
+    let currentSlug = '';
+    try {
+      const getUrl = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
+      const { data: currentItem } = await axios.get(getUrl, {
+        headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
+      });
+      currentSlug = currentItem.fieldData?.slug || '';
+    } catch (e) {
+      console.log('Could not fetch current item, will generate new slug');
+    }
+
+    // Génère un slug uniquement si différent du titre ou si pas de slug actuel
     const generatedSlug = slug && slug.length > 0
       ? slug
-      : title.toLowerCase()
+      : (currentSlug || title.toLowerCase()
           .replace(/[àáâäæãåā]/g, 'a')
           .replace(/[èéêëēėę]/g, 'e')
           .replace(/[îïíīįì]/g, 'i')
@@ -169,49 +181,77 @@ app.put('/api/offres/:itemId', async (req, res) => {
           .replace(/[çć]/g, 'c')
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-+|-+$/g, '')
-          .slice(0, 80);
+          .slice(0, 80) + '-' + Date.now()); // Ajout d'un timestamp pour éviter les doublons
 
+    // Construction du fieldData avec validation
     const fieldData = {
-      post: title,  // IMPORTANT: Webflow attend 'post' et non 'title'
-      slug: generatedSlug,
-      "description-du-poste": description || "",
-      "nom-de-lentreprise": company || "",
-      lieu: location || "",
-      "type-de-contrat": type || "",
-      salaire: salary || "",
-      email: email || "",
-      téléphone: telephone || "",
-      adresse: address || ""
+      post: title.trim(),
+      slug: generatedSlug
     };
+
+    // Ajout conditionnel des champs optionnels (seulement s'ils ont une valeur)
+    if (description && description.trim()) fieldData["description-du-poste"] = description.trim();
+    if (company && company.trim()) fieldData["nom-de-lentreprise"] = company.trim();
+    if (location && location.trim()) fieldData["lieu"] = location.trim();
+    if (type && type.trim()) fieldData["type-de-contrat"] = type.trim();
+    if (salary && salary.trim()) fieldData["salaire"] = salary.trim();
+    if (email && email.trim()) fieldData["email"] = email.trim();
+    if (address && address.trim()) fieldData["adresse"] = address.trim();
+    
+    // Format spécial pour le téléphone (enlever les espaces et caractères spéciaux)
+    if (telephone && telephone.trim()) {
+      const cleanPhone = telephone.replace(/[^\d+]/g, '');
+      if (cleanPhone) fieldData["téléphone"] = cleanPhone;
+    }
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
 
+    // Pour l'update, on utilise seulement fieldData
     const payload = {
-      isArchived: false,
-      isDraft: !publish,  // Si publish est true, isDraft doit être false
       fieldData
     };
 
+    // Si on veut changer le statut de publication
+    if (typeof publish === 'boolean') {
+      payload.isDraft = !publish;
+    }
+
     console.log('Updating offer with ID:', itemId);
-    console.log('Payload:', JSON.stringify(payload, null, 2));
+    console.log('Update payload:', JSON.stringify(payload, null, 2));
 
     const { data } = await axios.patch(url, payload, {
       headers: {
         Authorization: `Bearer ${WEBFLOW_TOKEN}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'accept-version': '1.0.0'
       }
     });
 
+    console.log('Update successful:', data.id);
+
     res.json({ ok: true, message: 'Offre mise à jour avec succès', item: data });
   } catch (err) {
-    console.error('PUT /api/offres/:itemId error:', err?.response?.data || err.message);
+    console.error('PUT /api/offres/:itemId full error:', err?.response?.data || err.message);
+    
+    // Log détaillé pour debug
+    if (err?.response) {
+      console.error('Status:', err.response.status);
+      console.error('Headers:', err.response.headers);
+      console.error('Data:', JSON.stringify(err.response.data, null, 2));
+    }
     
     // Retourne une erreur plus détaillée
     if (err?.response?.data) {
+      const errorMessage = err.response.data.message || 
+                          err.response.data.msg || 
+                          err.response.data.error || 
+                          'Erreur Webflow';
+      
       res.status(err.response.status || 500).json({ 
         ok: false, 
-        error: err.response.data.msg || err.response.data.error || 'Erreur Webflow',
-        details: err.response.data 
+        error: errorMessage,
+        details: err.response.data,
+        hint: 'Vérifiez que tous les champs requis sont remplis et que le slug est unique'
       });
     } else {
       res.status(500).json({ 
