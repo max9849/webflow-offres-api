@@ -11,6 +11,7 @@ app.use(cors({
   origin: [
     'https://valrjob.ch',
     'https://www.valrjob.ch',
+    'https://www.valrjob.ch/job-admin',
     'https://preview.webflow.com'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
