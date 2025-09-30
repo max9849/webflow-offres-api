@@ -1,224 +1,100 @@
-import 'dotenv/config';
-import express from 'express';
-import axios from 'axios';
-import cors from 'cors';
+// server.js
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
 
-/* ============ CORS (valrjob + preview + *.webflow.io) ============ */
-const allowedOrigins = [
-  'https://valrjob.ch',
-  'https://www.valrjob.ch',
-  'https://preview.webflow.com'
-];
-const webflowIoRegex = /\.webflow\.io$/;
+// --- middlewares de base ---
+app.use(helmet());
+app.use(cors({ origin: true })); // ajuste l'origine si besoin
+app.use(express.json({ limit: '200kb' }));
 
-app.use(cors({
-  origin(origin, cb) {
-    if (!origin) return cb(null, true);
-    try {
-      const u = new URL(origin);
-      if (allowedOrigins.includes(origin) || webflowIoRegex.test(u.hostname)) {
-        return cb(null, true);
-      }
-    } catch (_) {}
-    return cb(new Error(`CORS blocked for origin: ${origin}`));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type']
-}));
-app.options('*', cors());
+// rate limit: 60 req / 1 min par IP (ajuste si besoin)
+const limiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+app.use(limiter);
 
-app.use(express.json());
+// mémoire volatile pour voir les soumissions (pour test)
+const memoryStore = [];
 
-/* ============================ Utils ============================ */
-function requireEnv(name) {
-  const val = process.env[name];
-  if (!val) throw new Error(`Missing env: ${name}`);
-  return val;
-}
-
-// ✅ FONCTION POUR FORMULAIRE SIMPLE (2 champs)
-// ⚠️ VÉRIFIE LES VRAIS API FIELD IDs DANS WEBFLOW EN CLIQUANT SUR ⚙️
-function buildFieldDataFromBody(body) {
-  const { post, description } = body || {};
-  
-  // Générer le slug automatiquement depuis le titre
-  const slug = (post || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .slice(0, 80);
-
-  return {
-    post: post || '',  // ← Si API Field ID = "post"
-    slug: slug,
-    'description-du-poste': description || ''  // ← Si API Field ID = "description-du-poste"
-  };
-}
-
-function flattenItem(item) {
-  const f = item?.fieldData || {};
-  return {
-    id: item?.id,
-    published: !item?.isDraft && !item?.isArchived,
-    ...f,
-    description: f['description-du-poste'] ?? f.description ?? ''
-  };
-}
-
-/* ============================ Health ============================ */
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, api: 'v2' });
+// route de test GET
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
 });
 
-/* ============================ LISTE (publiées + brouillons) ============================ */
-app.get('/api/offres', async (req, res) => {
+// route de réception du formulaire
+app.post('/api/jobs', async (req, res) => {
   try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
-    const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
+    const { post, description } = req.body || {};
 
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items?limit=${limit}&offset=${offset}`;
-
-    const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
-
-    const items = (data?.items || []).map(flattenItem);
-    res.json({ ok: true, count: items.length, items, pagination: { limit, offset } });
-  } catch (err) {
-    console.error('GET /api/offres error:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
-  }
-});
-
-/* ============================ CREATE (live ou brouillon) ============================ */
-app.post('/api/offres', async (req, res) => {
-  console.log('POST /api/offres payload:', req.body);
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-
-    const { publish } = req.body || {};
-    const fieldData = buildFieldDataFromBody(req.body);
-
-    if (!fieldData.name) return res.status(400).json({ ok: false, error: 'Title is required' });
-
-    const base = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-    const url = publish ? `${base}/live` : base;
-
-    const payload = publish
-      ? { items: [{ isArchived: false, isDraft: false, fieldData }] }
-      : { isArchived: false, isDraft: true, fieldData };
-
-    const { data } = await axios.post(url, payload, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}`, 'Content-Type': 'application/json' }
-    });
-
-    const result = data?.items ? data.items.map(flattenItem) : flattenItem(data);
-    res.status(201).json({ ok: true, mode: publish ? 'live' : 'staged', item: result });
-  } catch (err) {
-    console.error('POST /api/offres FAILED:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
-  }
-});
-
-/* ============================ UPDATE (live si publish=true, sinon brouillon) ============================ */
-app.put('/api/offres/:itemId', async (req, res) => {
-  console.log('PUT /api/offres/:itemId', req.params.itemId, 'payload:', req.body);
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { itemId } = req.params;
-    const { publish } = req.body || {};
-    const fieldData = buildFieldDataFromBody(req.body);
-
-    const base = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-
-    if (publish) {
-      const url = `${base}/live`;
-      const payload = {
-        items: [{ id: itemId, isArchived: false, isDraft: false, fieldData }]
-      };
-      const { data } = await axios.post(url, payload, {
-        headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}`, 'Content-Type': 'application/json' }
-      });
-      const result = (data?.items || []).map(flattenItem);
-      return res.json({ ok: true, mode: 'live', item: result });
-    } else {
-      const url = `${base}/${itemId}`;
-      const payload = { isArchived: false, isDraft: true, fieldData };
-      const { data } = await axios.patch(url, payload, {
-        headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}`, 'Content-Type': 'application/json' }
-      });
-      return res.json({ ok: true, mode: 'staged', item: flattenItem(data) });
+    // anti-bot basique: refuse si trop court ou absent
+    if (!post || !description) {
+      return res.status(400).json({ error: 'Champs requis: post, description' });
     }
-  } catch (err) {
-    console.error('PUT /api/offres FAILED:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
+    if (post.length < 2 || description.length < 5) {
+      return res.status(400).json({ error: 'Contenu trop court' });
+    }
+
+    // stocke en mémoire (juste pour "voir que ça marche")
+    const item = {
+      id: Date.now().toString(36),
+      post: String(post),
+      description: String(description),
+      createdAt: new Date().toISOString()
+    };
+    memoryStore.push(item);
+
+    // --- (OPTIONNEL) Envoi vers Webflow CMS via API ---
+    // Dé-commente quand tu es prêt + remplis tes variables dans .env
+    /*
+    const collectionId = process.env.WEBFLOW_COLLECTION_ID; // ta collection "Jobs" avec champs "Post" & "Description du poste"
+    const apiToken = process.env.WEBFLOW_API_TOKEN;
+
+    // ⚠️ Vérifie bien le nom "field keys" de tes champs dans Webflow CMS.
+    // Souvent c'est des versions slugifiées, ex: "post" et "description-du-poste".
+    // Ci-dessous, on illustre un appel générique (v2 peut évoluer — vérifie la doc officielle).
+    const wfRes = await fetch(`https://api.webflow.com/v2/collections/${collectionId}/items`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: JSON.stringify({
+        // adapter selon schéma CMS exact (vérifie le "fieldData" attendu par la version d'API que tu uses)
+        // Ex type (pseudocode, à ajuster):
+        isArchived: false,
+        isDraft: false,
+        fieldData: {
+          name: post, // si tu veux aussi remplir "name"
+          'post': post,
+          'description-du-poste': description
+        }
+      })
+    });
+
+    if (!wfRes.ok) {
+      const errText = await wfRes.text();
+      console.error('Webflow CMS error:', wfRes.status, errText);
+      // on ne bloque pas la démo, mais tu peux renvoyer une 502 si tu préfères
+    }
+    */
+
+    // réponse au front
+    return res.status(201).json(item);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-/* ============================ DELETE ============================ */
-app.delete('/api/offres/:itemId', async (req, res) => {
-  console.log('DELETE /api/offres/:itemId', req.params.itemId);
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { itemId } = req.params;
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
-    await axios.delete(url, { headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` } });
-
-    res.json({ ok: true, deleted: itemId });
-  } catch (err) {
-    console.error('DELETE /api/offres FAILED:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
-  }
+// pour jeter un oeil aux soumissions (dev uniquement)
+app.get('/api/jobs', (req, res) => {
+  res.json({ count: memoryStore.length, items: memoryStore });
 });
 
-/* ============================ GET ONE (live) by ID ============================ */
-app.get('/api/offres/:itemId/live', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { itemId } = req.params;
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}/live`;
-    const { data } = await axios.get(url, { headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` } });
-
-    res.json({ ok: true, item: flattenItem(data) });
-  } catch (err) {
-    console.error('GET /api/offres/:itemId/live FAILED:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
-  }
-});
-
-/* ============================ GET by slug ============================ */
-app.get('/api/offres-by-slug/:slug', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { slug } = req.params;
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items?limit=100`;
-    const { data } = await axios.get(url, { headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` } });
-
-    const found = (data?.items || []).find(i => i?.fieldData?.slug === slug);
-    if (!found) return res.status(404).json({ ok: false, error: 'Item not found' });
-
-    res.json({ ok: true, item: flattenItem(found) });
-  } catch (err) {
-    console.error('GET /api/offres-by-slug FAILED:', err?.response?.data || err.message);
-    res.status(500).json({ ok: false, error: err?.response?.data || err.message });
-  }
-});
-
-/* ============================ START ============================ */
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ API v2 server running on port ${PORT}`);
-});
+  console.lo
