@@ -32,11 +32,11 @@ function requireEnv(name) {
   return val;
 }
 
-/** 🔎 LISTE DES OFFRES PUBLIÉES */
+/** 🔎 LISTE DES OFFRES PUBLIÉES (pour l’embed) */
 app.get('/api/offres', async (req, res) => {
   try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');               // wfpat_...
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID'); // ID v2
     const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
     const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
 
@@ -48,10 +48,9 @@ app.get('/api/offres', async (req, res) => {
 
     const items = (data?.items || []).map(i => ({
       id: i.id,
-      name: i.fieldData?.name || '',
-      slug: i.fieldData?.slug || '',
-      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
-      description: i.fieldData?.['description-du-poste'] || ''
+      title: i.fieldData?.Post || '',                          // ✅ API ID exact
+      slug: i.fieldData?.Slug || '',                           // ✅ API ID exact
+      description: i.fieldData?.['Description-du-poste'] || '' // ✅ API ID exact
     }));
 
     res.json({ ok: true, count: items.length, items, pagination: { limit, offset } });
@@ -61,7 +60,7 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
-/** ✍️ CRÉER + PUBLIER IMMÉDIATEMENT */
+/** ✍️ CRÉER + (OPTION) PUBLIER IMMÉDIATEMENT */
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -70,12 +69,12 @@ app.post('/api/offres', async (req, res) => {
     const { title, slug, description, publish } = req.body || {};
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
+    // Champ → API IDs EXACTS de ta collection
     const fieldData = {
-      name: title,
-      slug: (slug && slug.length > 0
+      Post: title, // titre du poste
+      Slug: (slug && slug.length > 0
         ? slug
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)),
-      // ⚠️ adapte ce champ à ton API ID exact dans Webflow
       "Description-du-poste": description || ""
     };
 
@@ -83,14 +82,14 @@ app.post('/api/offres', async (req, res) => {
     const url = publish ? `${base}/live` : base;
 
     const payload = publish
-      ? {
+      ? { // Create Live Item(s) : tableau d’items
           items: [{
             isArchived: false,
             isDraft: false,
             fieldData
           }]
         }
-      : {
+      : { // Create (staged) : un seul item (non publié)
           isArchived: false,
           isDraft: true,
           fieldData
@@ -103,7 +102,7 @@ app.post('/api/offres', async (req, res) => {
       }
     });
 
-    const result = data?.items ?? data;
+    const result = data?.items ?? data; // /live renvoie {items:[]}, /items renvoie un item
     res.status(201).json({ ok: true, mode: publish ? 'live' : 'staged', item: result });
   } catch (err) {
     console.error('POST /api/offres error:', err?.response?.data || err.message);
@@ -111,7 +110,7 @@ app.post('/api/offres', async (req, res) => {
   }
 });
 
-/** 🔎 OBTENIR UN ITEM PAR ID (live) */
+/** 🔎 OBTENIR UN ITEM LIVE PAR ID (optionnel) */
 app.get('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -119,7 +118,6 @@ app.get('/api/offres/:itemId', async (req, res) => {
     const { itemId } = req.params;
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}/live`;
-
     const { data } = await axios.get(url, {
       headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
     });
@@ -131,7 +129,7 @@ app.get('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-/** 🔎 OBTENIR UN ITEM PAR SLUG */
+/** 🔎 OBTENIR UN ITEM PAR SLUG (optionnel) */
 app.get('/api/offres-by-slug/:slug', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -139,12 +137,11 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
     const { slug } = req.params;
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items?limit=100&isDraft=false&isArchived=false`;
-
     const { data } = await axios.get(url, {
       headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
     });
 
-    const item = (data?.items || []).find(i => i.fieldData?.slug === slug);
+    const item = (data?.items || []).find(i => i.fieldData?.Slug === slug);
     if (!item) return res.status(404).json({ ok: false, error: 'Item not found' });
 
     res.json({ ok: true, item });
