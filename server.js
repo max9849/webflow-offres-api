@@ -1,44 +1,74 @@
-// server.js (CommonJS)
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-
-const app = express();
-
-// Middlewares basiques
-app.use(cors({ origin: true }));
-app.use(express.json({ limit: '200kb' }));
-
-// Mémoire volatile pour tester
-const memoryStore = [];
-
-// Healthcheck
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
-});
-
-// Réception du formulaire
-app.post('/api/jobs', (req, res) => {
-  const { post, description } = req.body || {};
-  if (!post || !description) {
-    return res.status(400).json({ error: 'Champs requis: post, description' });
-  }
-  const item = {
-    id: Date.now().toString(36),
-    post: String(post),
-    description: String(description),
-    createdAt: new Date().toISOString()
-  };
-  memoryStore.push(item);
-  return res.status(201).json(item);
-});
-
-// Voir les items (debug)
-app.get('/api/jobs', (req, res) => {
-  res.json({ count: memoryStore.length, items: memoryStore });
-});
+// server.js — démarre avec: node server.js
+const http = require('http');
+const { URL } = require('url');
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const memory = []; // stockage en mémoire pour tester
+
+function send(res, status, dataObj) {
+  const body = JSON.stringify(dataObj || {});
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',              // CORS pour Webflow
+    'Access-Control-Allow-Headers': 'Content-Type',  // CORS
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+  });
+  res.end(body);
+}
+
+const server = http.createServer((req, res) => {
+  // Prévol CORS
+  if (req.method === 'OPTIONS') return send(res, 204, {});
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
+
+  // Healthcheck
+  if (req.method === 'GET' && path === '/api/health') {
+    return send(res, 200, { ok: true, time: new Date().toISOString() });
+  }
+
+  // Voir les items (debug)
+  if (req.method === 'GET' && path === '/api/jobs') {
+    return send(res, 200, { count: memory.length, items: memory });
+  }
+
+  // Réception du formulaire
+  if (req.method === 'POST' && path === '/api/jobs') {
+    let raw = '';
+    req.on('data', chunk => {
+      raw += chunk;
+      if (raw.length > 1e6) req.destroy(); // protection payload trop gros
+    });
+    req.on('end', () => {
+      try {
+        const json = JSON.parse(raw || '{}');
+        const post = (json.post || '').toString().trim();
+        const description = (json.description || '').toString().trim();
+
+        if (!post || !description) {
+          return send(res, 400, { error: 'Champs requis: post, description' });
+        }
+
+        const item = {
+          id: Date.now().toString(36),
+          post,
+          description,
+          createdAt: new Date().toISOString()
+        };
+        memory.push(item);
+        return send(res, 201, item);
+      } catch (e) {
+        return send(res, 400, { error: 'JSON invalide' });
+      }
+    });
+    return;
+  }
+
+  // 404
+  send(res, 404, { error: 'Not found' });
+});
+
+server.listen(PORT, () => {
   console.log(`API prête sur http://localhost:${PORT}`);
 });
