@@ -76,7 +76,7 @@ app.post('/api/offres', async (req, res) => {
         ? slug
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 80)),
       // ⚠️ adapte ce champ à ton API ID exact dans Webflow
-      "description-du-poste": description || ""
+      "Description-du-poste": description || ""
     };
 
     const base = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
