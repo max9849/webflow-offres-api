@@ -63,16 +63,11 @@ function buildFieldDataFromBody(body) {
         .slice(0, 80);
 
   return {
-    name: title || '',
-    slug: computedSlug,
-    'description-du-poste': description || '',
-    company: company || '',
-    location: location || '',
-    type: type || '',
-    salary: salary || '',
-    email: email || '',
-    telephone: telephone || '',
-    address: address || ''
+    name: Post || '',
+    slug: slug,
+    'description-du-poste': Description du poste || '',
+    company: Nom de l'entreprise || '',
+   
   };
 }
 
