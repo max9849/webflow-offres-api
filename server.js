@@ -40,6 +40,7 @@ function requireEnv(name) {
 }
 
 // ✅ FONCTION POUR FORMULAIRE SIMPLE (2 champs)
+// ⚠️ VÉRIFIE LES VRAIS API FIELD IDs DANS WEBFLOW EN CLIQUANT SUR ⚙️
 function buildFieldDataFromBody(body) {
   const { post, description } = body || {};
   
@@ -52,9 +53,9 @@ function buildFieldDataFromBody(body) {
     .slice(0, 80);
 
   return {
-    name: post || '',
+    post: post || '',  // ← Si API Field ID = "post"
     slug: slug,
-    'Description-du-poste': description || ''
+    'description-du-poste': description || ''  // ← Si API Field ID = "description-du-poste"
   };
 }
 
@@ -64,7 +65,7 @@ function flattenItem(item) {
     id: item?.id,
     published: !item?.isDraft && !item?.isArchived,
     ...f,
-    description: f['Description-du-poste'] ?? f.description ?? ''
+    description: f['description-du-poste'] ?? f.description ?? ''
   };
 }
 
