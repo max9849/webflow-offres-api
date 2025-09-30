@@ -16,7 +16,7 @@ const webflowIoRegex = /\.webflow\.io$/;
 
 app.use(cors({
   origin(origin, cb) {
-    if (!origin) return cb(null, true); // curl/server-to-server
+    if (!origin) return cb(null, true);
     try {
       const u = new URL(origin);
       if (allowedOrigins.includes(origin) || webflowIoRegex.test(u.hostname)) {
@@ -39,35 +39,22 @@ function requireEnv(name) {
   return val;
 }
 
-// ⚠️ ADAPTE ICI les API Field IDs de TA collection.
-// Par défaut, on utilise ces IDs : name, slug, "description-du-poste", company, location, type, salary, email, telephone, address.
+// ✅ FONCTION POUR FORMULAIRE SIMPLE (2 champs)
 function buildFieldDataFromBody(body) {
-  const {
-    title,
-    slug,
-    description,
-    company,
-    location,
-    type,
-    salary,
-    email,
-    telephone,
-    address
-  } = body || {};
-
-  const computedSlug = (slug && slug.length > 0)
-    ? slug
-    : (title || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .slice(0, 80);
+  const { post, description } = body || {};
+  
+  // Générer le slug automatiquement depuis le titre
+  const slug = (post || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 80);
 
   return {
-    name: Post || '',
+    name: post || '',
     slug: slug,
-    'description-du-poste': Description du poste || '',
-    company: Nom de l'entreprise || '',
-   
+    'description-du-poste': description || ''
   };
 }
 
@@ -77,7 +64,6 @@ function flattenItem(item) {
     id: item?.id,
     published: !item?.isDraft && !item?.isArchived,
     ...f,
-    // alias pratique si tu utilises "description" côté front
     description: f['description-du-poste'] ?? f.description ?? ''
   };
 }
@@ -90,8 +76,8 @@ app.get('/health', (_req, res) => {
 /* ============================ LISTE (publiées + brouillons) ============================ */
 app.get('/api/offres', async (req, res) => {
   try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');            // wfpat_...
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID'); // ID v2
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
     const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
 
@@ -153,7 +139,6 @@ app.put('/api/offres/:itemId', async (req, res) => {
     const base = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
 
     if (publish) {
-      // Update + Publish (bulk /live)
       const url = `${base}/live`;
       const payload = {
         items: [{ id: itemId, isArchived: false, isDraft: false, fieldData }]
@@ -164,7 +149,6 @@ app.put('/api/offres/:itemId', async (req, res) => {
       const result = (data?.items || []).map(flattenItem);
       return res.json({ ok: true, mode: 'live', item: result });
     } else {
-      // Update staged (brouillon)
       const url = `${base}/${itemId}`;
       const payload = { isArchived: false, isDraft: true, fieldData };
       const { data } = await axios.patch(url, payload, {
