@@ -6,15 +6,25 @@ import cors from 'cors';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-/* ============================
-   CORS (autorise ton domaine)
-   ============================ */
+/* ============ CORS (valrjob + preview + *.webflow.io) ============ */
+const allowedOrigins = [
+  'https://valrjob.ch',
+  'https://www.valrjob.ch',
+  'https://preview.webflow.com'
+];
+const webflowIoRegex = /\.webflow\.io$/;
+
 app.use(cors({
-  origin: [
-    'https://valrjob.ch',
-    'https://www.valrjob.ch',
-    'https://preview.webflow.com'
-  ],
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // curl/server-to-server
+    try {
+      const u = new URL(origin);
+      if (allowedOrigins.includes(origin) || webflowIoRegex.test(u.hostname)) {
+        return cb(null, true);
+      }
+    } catch (_) {}
+    return cb(new Error(`CORS blocked for origin: ${origin}`));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
@@ -22,17 +32,15 @@ app.options('*', cors());
 
 app.use(express.json());
 
-/* ============================
-   Utils
-   ============================ */
+/* ============================ Utils ============================ */
 function requireEnv(name) {
   const val = process.env[name];
   if (!val) throw new Error(`Missing env: ${name}`);
   return val;
 }
 
-// Mappe le body du front (title, description, etc.) vers fieldData Webflow.
-// ⚠️ Adapte ici les *API Field IDs* EXACTS de ta collection si nécessaire.
+// ⚠️ ADAPTE ICI les API Field IDs de TA collection.
+// Par défaut, on utilise ces IDs : name, slug, "description-du-poste", company, location, type, salary, email, telephone, address.
 function buildFieldDataFromBody(body) {
   const {
     title,
@@ -54,14 +62,10 @@ function buildFieldDataFromBody(body) {
         .replace(/[^a-z0-9]+/g, '-')
         .slice(0, 80);
 
-  const fieldData = {
-    // champs "core"
+  return {
     name: title || '',
     slug: computedSlug,
-    // ⚠️ CHAMP DESCRIPTION : remplace "description-du-poste" par l'API ID exact si différent
     'description-du-poste': description || '',
-
-    // champs additionnels usuels — à adapter si tes API IDs diffèrent
     company: company || '',
     location: location || '',
     type: type || '',
@@ -70,42 +74,32 @@ function buildFieldDataFromBody(body) {
     telephone: telephone || '',
     address: address || ''
   };
-
-  return fieldData;
 }
 
-// Aplatis un item Webflow v2 pour le front (tout en haut + published booléen)
 function flattenItem(item) {
   const f = item?.fieldData || {};
   return {
     id: item?.id,
     published: !item?.isDraft && !item?.isArchived,
-    // on expose tous les champs CMS directement (name, slug, company, etc.)
     ...f,
-    // et on propose un alias "description" pratique
+    // alias pratique si tu utilises "description" côté front
     description: f['description-du-poste'] ?? f.description ?? ''
   };
 }
 
-/* ============================
-   Health
-   ============================ */
+/* ============================ Health ============================ */
 app.get('/health', (_req, res) => {
   res.json({ ok: true, api: 'v2' });
 });
 
-/* ============================
-   LISTE (publiées + brouillons)
-   GET /api/offres?limit&offset
-   ============================ */
+/* ============================ LISTE (publiées + brouillons) ============================ */
 app.get('/api/offres', async (req, res) => {
   try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');            // wfpat_...
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID'); // ID v2
     const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
     const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
 
-    // On NE filtre pas ici pour récupérer tout (publiées + brouillons)
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items?limit=${limit}&offset=${offset}`;
 
     const { data } = await axios.get(url, {
@@ -113,7 +107,6 @@ app.get('/api/offres', async (req, res) => {
     });
 
     const items = (data?.items || []).map(flattenItem);
-
     res.json({ ok: true, count: items.length, items, pagination: { limit, offset } });
   } catch (err) {
     console.error('GET /api/offres error:', err?.response?.data || err.message);
@@ -121,12 +114,9 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
-/* ============================
-   CREATE (live ou brouillon)
-   POST /api/offres
-   Body: { title, slug?, description?, publish:boolean, ... }
-   ============================ */
+/* ============================ CREATE (live ou brouillon) ============================ */
 app.post('/api/offres', async (req, res) => {
+  console.log('POST /api/offres payload:', req.body);
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
@@ -134,49 +124,30 @@ app.post('/api/offres', async (req, res) => {
     const { publish } = req.body || {};
     const fieldData = buildFieldDataFromBody(req.body);
 
-    if (!fieldData.name) {
-      return res.status(400).json({ ok: false, error: 'Title is required' });
-    }
+    if (!fieldData.name) return res.status(400).json({ ok: false, error: 'Title is required' });
 
     const base = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
     const url = publish ? `${base}/live` : base;
 
-    // /items/live attend un tableau "items"
     const payload = publish
-      ? {
-          items: [{
-            isArchived: false,
-            isDraft: false,
-            fieldData
-          }]
-        }
-      : {
-          isArchived: false,
-          isDraft: true,
-          fieldData
-        };
+      ? { items: [{ isArchived: false, isDraft: false, fieldData }] }
+      : { isArchived: false, isDraft: true, fieldData };
 
     const { data } = await axios.post(url, payload, {
-      headers: {
-        Authorization: `Bearer ${WEBFLOW_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
+      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}`, 'Content-Type': 'application/json' }
     });
 
     const result = data?.items ? data.items.map(flattenItem) : flattenItem(data);
     res.status(201).json({ ok: true, mode: publish ? 'live' : 'staged', item: result });
   } catch (err) {
-    console.error('POST /api/offres error:', err?.response?.data || err.message);
+    console.error('POST /api/offres FAILED:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
   }
 });
 
-/* ============================
-   UPDATE (live ou brouillon)
-   PUT /api/offres/:itemId
-   Body: { title?, slug?, description?, publish:boolean, ... }
-   ============================ */
+/* ============================ UPDATE (live si publish=true, sinon brouillon) ============================ */
 app.put('/api/offres/:itemId', async (req, res) => {
+  console.log('PUT /api/offres/:itemId', req.params.itemId, 'payload:', req.body);
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
@@ -187,15 +158,10 @@ app.put('/api/offres/:itemId', async (req, res) => {
     const base = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
 
     if (publish) {
-      // UPDATE + PUBLISH (live bulk update)
+      // Update + Publish (bulk /live)
       const url = `${base}/live`;
       const payload = {
-        items: [{
-          id: itemId,
-          isArchived: false,
-          isDraft: false,
-          fieldData
-        }]
+        items: [{ id: itemId, isArchived: false, isDraft: false, fieldData }]
       };
       const { data } = await axios.post(url, payload, {
         headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}`, 'Content-Type': 'application/json' }
@@ -203,50 +169,39 @@ app.put('/api/offres/:itemId', async (req, res) => {
       const result = (data?.items || []).map(flattenItem);
       return res.json({ ok: true, mode: 'live', item: result });
     } else {
-      // UPDATE STAGED (brouillon)
+      // Update staged (brouillon)
       const url = `${base}/${itemId}`;
-      const payload = {
-        isArchived: false,
-        isDraft: true,
-        fieldData
-      };
+      const payload = { isArchived: false, isDraft: true, fieldData };
       const { data } = await axios.patch(url, payload, {
         headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}`, 'Content-Type': 'application/json' }
       });
       return res.json({ ok: true, mode: 'staged', item: flattenItem(data) });
     }
   } catch (err) {
-    console.error('PUT /api/offres/:itemId error:', err?.response?.data || err.message);
+    console.error('PUT /api/offres FAILED:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
   }
 });
 
-/* ============================
-   DELETE
-   DELETE /api/offres/:itemId
-   ============================ */
+/* ============================ DELETE ============================ */
 app.delete('/api/offres/:itemId', async (req, res) => {
+  console.log('DELETE /api/offres/:itemId', req.params.itemId);
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     const { itemId } = req.params;
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
-    await axios.delete(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
+    await axios.delete(url, { headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` } });
 
     res.json({ ok: true, deleted: itemId });
   } catch (err) {
-    console.error('DELETE /api/offres/:itemId error:', err?.response?.data || err.message);
+    console.error('DELETE /api/offres FAILED:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
   }
 });
 
-/* ============================
-   GET ONE (live) by ID
-   GET /api/offres/:itemId/live
-   ============================ */
+/* ============================ GET ONE (live) by ID ============================ */
 app.get('/api/offres/:itemId/live', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -254,21 +209,16 @@ app.get('/api/offres/:itemId/live', async (req, res) => {
     const { itemId } = req.params;
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}/live`;
-    const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
+    const { data } = await axios.get(url, { headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` } });
 
     res.json({ ok: true, item: flattenItem(data) });
   } catch (err) {
-    console.error('GET /api/offres/:itemId/live error:', err?.response?.data || err.message);
+    console.error('GET /api/offres/:itemId/live FAILED:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
   }
 });
 
-/* ============================
-   GET ONE by slug (convenience)
-   GET /api/offres-by-slug/:slug
-   ============================ */
+/* ============================ GET by slug ============================ */
 app.get('/api/offres-by-slug/:slug', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -276,24 +226,19 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
     const { slug } = req.params;
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items?limit=100`;
-    const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
+    const { data } = await axios.get(url, { headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` } });
 
-    const raw = (data?.items || []);
-    const found = raw.find(i => i?.fieldData?.slug === slug);
+    const found = (data?.items || []).find(i => i?.fieldData?.slug === slug);
     if (!found) return res.status(404).json({ ok: false, error: 'Item not found' });
 
     res.json({ ok: true, item: flattenItem(found) });
   } catch (err) {
-    console.error('GET /api/offres-by-slug/:slug error:', err?.response?.data || err.message);
+    console.error('GET /api/offres-by-slug FAILED:', err?.response?.data || err.message);
     res.status(500).json({ ok: false, error: err?.response?.data || err.message });
   }
 });
 
-/* ============================
-   START
-   ============================ */
+/* ============================ START ============================ */
 app.listen(PORT, () => {
   console.log(`✅ API v2 server running on port ${PORT}`);
 });
