@@ -54,7 +54,7 @@ function buildFieldDataFromBody(body) {
   return {
     name: post || '',
     slug: slug,
-    'description-du-poste': description || ''
+    'Description-du-poste': description || ''
   };
 }
 
@@ -64,7 +64,7 @@ function flattenItem(item) {
     id: item?.id,
     published: !item?.isDraft && !item?.isArchived,
     ...f,
-    description: f['description-du-poste'] ?? f.description ?? ''
+    description: f['Description-du-poste'] ?? f.description ?? ''
   };
 }
 
