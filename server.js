@@ -1,429 +1,417 @@
-import 'dotenv/config';
-import express from 'express';
-import axios from 'axios';
-import cors from 'cors';
-
-const app = express();
-const PORT = process.env.PORT || 8080;
-
-// ========================================
-// MIDDLEWARE
-// ========================================
-
-// CORS - Autorise valrjob.ch
-app.use(cors({
-  origin: [
-    'https://valrjob.ch',
-    'https://www.valrjob.ch',
-    'https://preview.webflow.com',
-    'http://localhost:3000'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
-
-app.options('*', cors());
-
-app.use(express.json());
-
-// Logging middleware
-app.use((req, res, next) => {
-  console.log(`📝 ${req.method} ${req.path}`);
-  next();
-});
-
-// ========================================
-// HEALTH CHECK
-// ========================================
-
-app.get('/health', (req, res) => {
-  res.json({ 
-    ok: true, 
-    api: 'v2', 
-    timestamp: new Date().toISOString() 
-  });
-});
-
-// ========================================
-// HELPER FUNCTIONS
-// ========================================
-
-function requireEnv(name) {
-  const val = process.env[name];
-  if (!val) throw new Error(`Missing env: ${name}`);
-  return val;
-}
-
-// Génère un slug unique
-function generateSlug(text) {
-  const baseSlug = (text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
+{
+  "cms_collection_name": "Offres d'emploi",
   
-  const timestamp = Date.now().toString().slice(-6);
-  return `${baseSlug}-${timestamp}`;
-}
-
-// Transforme le body en fieldData Webflow
-function buildFieldData(body) {
-  const {
-    post,
-    description,
-    company,
-    location,
-    type,
-    salary,
-    email,
-    telephone,
-    address,
-    responsibilities,
-    profile
-  } = body || {};
-
-  return {
-    post: post || '',
-    slug: generateSlug(post),
-    'description-du-poste': description || '',
-    'nom-de-lentreprise': company || '',
-    lieu: location || '',
-    'type-de-contrat': type || '',
-    salaire: salary || '',
-    email: email || '',
-    téléphone: telephone || '',
-    adresse: address || '',
-    responsabilites: responsibilities || '',
-    profil: profile || ''
-  };
-}
-
-// ========================================
-// ROUTES API
-// ========================================
-
-// 📋 LISTE DES OFFRES PUBLIÉES
-app.get('/api/offres', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    
-    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
-    const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-    
-    const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` },
-      params: {
-        limit,
-        offset,
-        isDraft: false,
-        isArchived: false
-      }
-    });
-
-    const items = (data?.items || []).map(item => ({
-      id: item.id,
-      name: item.fieldData?.post || item.fieldData?.name || '',
-      post: item.fieldData?.post || '',
-      slug: item.fieldData?.slug || '',
-      'description-du-poste': item.fieldData?.['description-du-poste'] || '',
-      'nom-de-lentreprise': item.fieldData?.['nom-de-lentreprise'] || '',
-      lieu: item.fieldData?.lieu || '',
-      'type-de-contrat': item.fieldData?.['type-de-contrat'] || '',
-      salaire: item.fieldData?.salaire || '',
-      email: item.fieldData?.email || '',
-      téléphone: item.fieldData?.téléphone || '',
-      adresse: item.fieldData?.adresse || '',
-      responsabilites: item.fieldData?.responsabilites || '',
-      profil: item.fieldData?.profil || ''
-    }));
-
-    res.json({ 
-      ok: true, 
-      count: items.length, 
-      items,
-      pagination: { limit, offset }
-    });
-
-  } catch (err) {
-    console.error('❌ GET /api/offres error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
-
-// ➕ CRÉER UNE NOUVELLE OFFRE
-app.post('/api/offres', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-
-    const fieldData = buildFieldData(req.body);
-    const publish = req.body.publish !== false;
-
-    console.log('📤 Création offre:', { fieldData, publish });
-
-    // Créer l'item
-    const createUrl = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-    const { data: created } = await axios.post(createUrl, {
-      fieldData,
-      isDraft: !publish
-    }, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
-
-    console.log('✅ Item créé:', created.id);
-
-    // Publier si demandé
-    if (publish && created.id) {
-      try {
-        const publishUrl = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/publish`;
-        await axios.post(publishUrl, {
-          itemIds: [created.id]
-        }, {
-          headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-        });
-        console.log('✅ Item publié');
-      } catch (pubErr) {
-        console.error('⚠️ Erreur publication:', pubErr?.response?.data);
-      }
+  "cms_fields": [
+    {
+      "field_name": "Post",
+      "api_identifier": "post",
+      "field_type": "Plain text",
+      "required": true,
+      "description": "Titre du poste (ex: Développeur Web, Comptable, Chef de projet...)"
+    },
+    {
+      "field_name": "Slug",
+      "api_identifier": "slug",
+      "field_type": "Plain text",
+      "required": true,
+      "unique": true,
+      "auto_generated": true,
+      "description": "URL de l'offre (généré automatiquement par le serveur)"
+    },
+    {
+      "field_name": "Description du poste",
+      "api_identifier": "description-du-poste",
+      "field_type": "Rich text",
+      "required": false,
+      "description": "Description générale du poste et de ses missions"
+    },
+    {
+      "field_name": "Nom de l'entreprise",
+      "api_identifier": "nom-de-lentreprise",
+      "field_type": "Plain text",
+      "required": false,
+      "description": "Nom de l'entreprise qui recrute"
+    },
+    {
+      "field_name": "Lieu",
+      "api_identifier": "lieu",
+      "field_type": "Plain text",
+      "required": false,
+      "description": "Lieu de travail (ville, canton, pays)"
+    },
+    {
+      "field_name": "Type de contrat",
+      "api_identifier": "type-de-contrat",
+      "field_type": "Plain text",
+      "required": false,
+      "description": "Type de contrat (CDI, CDD, Temporaire, Stage...)"
+    },
+    {
+      "field_name": "Salaire",
+      "api_identifier": "salaire",
+      "field_type": "Plain text",
+      "required": false,
+      "description": "Fourchette de salaire (ex: 80'000 - 100'000 CHF/an)"
+    },
+    {
+      "field_name": "Email",
+      "api_identifier": "email",
+      "field_type": "Email",
+      "required": false,
+      "description": "Email de contact pour candidater"
+    },
+    {
+      "field_name": "Téléphone",
+      "api_identifier": "téléphone",
+      "field_type": "Phone",
+      "required": false,
+      "description": "Numéro de téléphone de contact"
+    },
+    {
+      "field_name": "Adresse",
+      "api_identifier": "adresse",
+      "field_type": "Plain text",
+      "required": false,
+      "description": "Adresse postale complète de l'entreprise"
+    },
+    {
+      "field_name": "Responsabilités",
+      "api_identifier": "responsabilites",
+      "field_type": "Rich text",
+      "required": false,
+      "description": "Liste des responsabilités et tâches principales du poste"
+    },
+    {
+      "field_name": "Profil",
+      "api_identifier": "profil",
+      "field_type": "Rich text",
+      "required": false,
+      "description": "Profil recherché : compétences, expérience, formation requise"
     }
+  ],
 
-    res.json({ 
-      ok: true, 
-      item: created 
-    });
-
-  } catch (err) {
-    console.error('❌ POST /api/offres error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
-
-// ✏️ MODIFIER UNE OFFRE (PUT)
-app.put('/api/offres/:itemId', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { itemId } = req.params;
-
-    const fieldData = buildFieldData(req.body);
-    
-    console.log('📤 Modification offre:', { itemId, fieldData });
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
-    
-    const { data } = await axios.patch(url, {
-      fieldData
-    }, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
-
-    console.log('✅ Offre modifiée');
-
-    res.json({ 
-      ok: true, 
-      item: data 
-    });
-
-  } catch (err) {
-    console.error('❌ PUT /api/offres/:itemId error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
-
-// 🗑️ SUPPRIMER UNE OFFRE
-app.delete('/api/offres/:itemId', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { itemId } = req.params;
-
-    console.log('🗑️ Suppression offre:', itemId);
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
-    
-    await axios.delete(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
-
-    console.log('✅ Offre supprimée');
-
-    res.json({ 
-      ok: true, 
-      message: 'Item deleted successfully' 
-    });
-
-  } catch (err) {
-    console.error('❌ DELETE /api/offres/:itemId error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
-
-// 🔍 OBTENIR UNE OFFRE PAR ID
-app.get('/api/offres/:itemId', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { itemId } = req.params;
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
-    
-    const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-    });
-
-    const item = {
-      id: data.id,
-      name: data.fieldData?.post || data.fieldData?.name || '',
-      post: data.fieldData?.post || '',
-      slug: data.fieldData?.slug || '',
-      'description-du-poste': data.fieldData?.['description-du-poste'] || '',
-      'nom-de-lentreprise': data.fieldData?.['nom-de-lentreprise'] || '',
-      lieu: data.fieldData?.lieu || '',
-      'type-de-contrat': data.fieldData?.['type-de-contrat'] || '',
-      salaire: data.fieldData?.salaire || '',
-      email: data.fieldData?.email || '',
-      téléphone: data.fieldData?.téléphone || '',
-      adresse: data.fieldData?.adresse || '',
-      responsabilites: data.fieldData?.responsabilites || '',
-      profil: data.fieldData?.profil || ''
-    };
-
-    res.json({ 
-      ok: true, 
-      item 
-    });
-
-  } catch (err) {
-    console.error('❌ GET /api/offres/:itemId error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
-
-// 🔍 OBTENIR UNE OFFRE PAR SLUG
-app.get('/api/offres-by-slug/:slug', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { slug } = req.params;
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-    
-    const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` },
-      params: {
-        limit: 100,
-        isDraft: false,
-        isArchived: false
-      }
-    });
-
-    const item = (data?.items || []).find(i => i.fieldData?.slug === slug);
-    
-    if (!item) {
-      return res.status(404).json({ 
-        ok: false, 
-        error: 'Item not found' 
-      });
+  "variables_environnement": {
+    "WEBFLOW_TOKEN": {
+      "description": "Token d'API Webflow (à obtenir depuis Webflow > Site Settings > Apps & Integrations)",
+      "required": true,
+      "format": "Bearer token string",
+      "exemple": "1234567890abcdef1234567890abcdef"
+    },
+    "WEBFLOW_COLLECTION_ID": {
+      "description": "ID de la collection CMS Webflow (à obtenir depuis l'URL de la collection)",
+      "required": true,
+      "format": "String (ex: 64f5a1b2c3d4e5f6g7h8i9j0)",
+      "exemple": "64f5a1b2c3d4e5f6g7h8i9j0"
+    },
+    "PORT": {
+      "description": "Port du serveur",
+      "required": false,
+      "default": 8080,
+      "format": "Number"
     }
+  },
 
-    const formattedItem = {
-      id: item.id,
-      name: item.fieldData?.post || item.fieldData?.name || '',
-      post: item.fieldData?.post || '',
-      slug: item.fieldData?.slug || '',
-      'description-du-poste': item.fieldData?.['description-du-poste'] || '',
-      'nom-de-lentreprise': item.fieldData?.['nom-de-lentreprise'] || '',
-      lieu: item.fieldData?.lieu || '',
-      'type-de-contrat': item.fieldData?.['type-de-contrat'] || '',
-      salaire: item.fieldData?.salaire || '',
-      email: item.fieldData?.email || '',
-      téléphone: item.fieldData?.téléphone || '',
-      adresse: item.fieldData?.adresse || '',
-      responsabilites: item.fieldData?.responsabilites || '',
-      profil: item.fieldData?.profil || ''
-    };
+  "exemple_payload_creation": {
+    "post": "Développeur Full Stack",
+    "description": "Nous recherchons un développeur passionné pour rejoindre notre équipe.",
+    "company": "TechCorp SA",
+    "location": "Lausanne, Vaud",
+    "type": "CDI",
+    "salary": "90'000 - 110'000 CHF/an",
+    "email": "jobs@techcorp.ch",
+    "telephone": "+41 21 555 12 34",
+    "address": "Avenue de la Gare 12, 1003 Lausanne",
+    "responsibilities": "- Développer des applications web\n- Maintenir le code existant\n- Collaborer avec l'équipe",
+    "profile": "- 3+ ans d'expérience\n- Maîtrise de React et Node.js\n- Excellente communication",
+    "publish": true
+  },
 
-    res.json({ 
-      ok: true, 
-      item: formattedItem 
-    });
+  "exemple_payload_modification": {
+    "post": "Développeur Full Stack Senior",
+    "salary": "100'000 - 120'000 CHF/an",
+    "description": "Description mise à jour du poste"
+  },
 
-  } catch (err) {
-    console.error('❌ GET /api/offres-by-slug/:slug error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
+  "endpoints_api": {
+    "base_url": "https://webflow-offres-api.onrender.com",
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/health",
+        "description": "Health check du serveur",
+        "exemple_response": {
+          "ok": true,
+          "api": "v2",
+          "timestamp": "2025-09-30T18:00:00.000Z"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/offres",
+        "description": "Récupérer toutes les offres publiées",
+        "query_params": {
+          "limit": "Nombre max d'offres (default: 20, max: 100)",
+          "offset": "Offset pour pagination (default: 0)"
+        },
+        "exemple_response": {
+          "ok": true,
+          "count": 15,
+          "items": [
+            {
+              "id": "abc123",
+              "name": "Développeur Web",
+              "post": "Développeur Web",
+              "slug": "developpeur-web-123456",
+              "description-du-poste": "Description...",
+              "nom-de-lentreprise": "TechCorp",
+              "lieu": "Lausanne",
+              "type-de-contrat": "CDI",
+              "salaire": "80k-100k CHF",
+              "email": "jobs@techcorp.ch",
+              "téléphone": "+41 21 555 1234",
+              "adresse": "Rue de la Tech 1",
+              "responsabilites": "Responsabilités...",
+              "profil": "Profil recherché..."
+            }
+          ],
+          "pagination": {
+            "limit": 20,
+            "offset": 0
+          }
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/offres",
+        "description": "Créer une nouvelle offre",
+        "body": "voir exemple_payload_creation",
+        "exemple_response": {
+          "ok": true,
+          "item": {
+            "id": "generated_id",
+            "fieldData": {}
+          }
+        }
+      },
+      {
+        "method": "PUT",
+        "path": "/api/offres/:itemId",
+        "description": "Modifier une offre existante",
+        "body": "voir exemple_payload_modification",
+        "exemple_response": {
+          "ok": true,
+          "item": {
+            "id": "item_id",
+            "fieldData": {}
+          }
+        }
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/offres/:itemId",
+        "description": "Supprimer une offre",
+        "exemple_response": {
+          "ok": true,
+          "message": "Item deleted successfully"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/offres/:itemId",
+        "description": "Récupérer une offre par son ID",
+        "exemple_response": {
+          "ok": true,
+          "item": {}
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/api/offres-by-slug/:slug",
+        "description": "Récupérer une offre par son slug",
+        "exemple_response": {
+          "ok": true,
+          "item": {}
+        }
+      }
+    ]
+  },
 
-// ========================================
-// GESTION D'ERREURS GLOBALE
-// ========================================
+  "instructions_deployment": {
+    "etape_1_webflow_cms": {
+      "titre": "Configuration du CMS Webflow",
+      "actions": [
+        "1. Aller dans Webflow > CMS",
+        "2. Créer une nouvelle collection 'Offres d'emploi'",
+        "3. Ajouter tous les 12 champs listés dans 'cms_fields'",
+        "4. IMPORTANT: Respecter EXACTEMENT les 'api_identifier' (sensible à la casse!)",
+        "5. Le champ 'Post' doit être le titre (Name field)",
+        "6. Le champ 'Slug' doit être unique et auto-généré",
+        "7. Sauvegarder la collection"
+      ]
+    },
+    "etape_2_webflow_api": {
+      "titre": "Obtenir les credentials Webflow",
+      "actions": [
+        "1. Aller dans Site Settings > Apps & Integrations",
+        "2. Dans la section 'API Access', cliquer 'Generate API token'",
+        "3. Copier le token (commence par 'wf_...')",
+        "4. Ouvrir la collection CMS dans l'éditeur",
+        "5. Regarder l'URL: ...collections/[COLLECTION_ID]",
+        "6. Copier le COLLECTION_ID"
+      ]
+    },
+    "etape_3_render_deployment": {
+      "titre": "Déploiement sur Render.com",
+      "actions": [
+        "1. Créer un compte sur render.com",
+        "2. Créer un nouveau 'Web Service'",
+        "3. Connecter votre repository GitHub",
+        "4. Configuration Build:",
+        "   - Build Command: npm install",
+        "   - Start Command: node server.js",
+        "5. Ajouter les variables d'environnement:",
+        "   - WEBFLOW_TOKEN = [votre token]",
+        "   - WEBFLOW_COLLECTION_ID = [votre collection id]",
+        "   - PORT = 8080",
+        "6. Cliquer 'Create Web Service'",
+        "7. Attendre le déploiement (5-10 min)",
+        "8. Copier l'URL de votre API (ex: https://xxx.onrender.com)"
+      ]
+    },
+    "etape_4_webflow_integration": {
+      "titre": "Intégration dans Webflow",
+      "actions": [
+        "1. ADMIN: Créer une page 'Administration' (cachée)",
+        "2. Ajouter un élément 'Embed' sur la page",
+        "3. Copier-coller le code de l'artefact 1 (ADMIN)",
+        "4. Remplacer 'https://webflow-offres-api.onrender.com' par VOTRE URL Render",
+        "5. PUBLIC: Créer/modifier la page 'Offres d'emploi'",
+        "6. Ajouter un élément 'Embed' sur la page",
+        "7. Copier-coller le code de l'artefact 2 (PUBLIC)",
+        "8. Remplacer 'https://webflow-offres-api.onrender.com' par VOTRE URL Render",
+        "9. Publier le site Webflow"
+      ]
+    },
+    "etape_5_tests": {
+      "titre": "Tests de validation",
+      "actions": [
+        "1. Tester le health check:",
+        "   GET https://votre-api.onrender.com/health",
+        "2. Aller sur la page Admin dans Webflow",
+        "3. Créer une nouvelle offre de test",
+        "4. Vérifier qu'elle apparaît dans la liste",
+        "5. Modifier l'offre et sauvegarder",
+        "6. Aller sur la page publique 'Offres d'emploi'",
+        "7. Vérifier que l'offre s'affiche correctement",
+        "8. Tester la recherche",
+        "9. Tester le bouton 'Postuler' (email)",
+        "10. Retour admin: supprimer l'offre de test"
+      ]
+    }
+  },
 
-app.use((err, req, res, next) => {
-  console.error('❌ Erreur serveur:', err);
-  res.status(500).json({ 
-    ok: false, 
-    error: 'Internal server error' 
-  });
-});
+  "package_json": {
+    "name": "valrjob-api",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "API pour valrjob.ch - Gestion des offres d'emploi",
+    "main": "server.js",
+    "scripts": {
+      "start": "node server.js",
+      "dev": "nodemon server.js"
+    },
+    "dependencies": {
+      "express": "^4.18.2",
+      "axios": "^1.6.2",
+      "cors": "^2.8.5",
+      "dotenv": "^16.3.1"
+    },
+    "devDependencies": {
+      "nodemon": "^3.0.2"
+    },
+    "engines": {
+      "node": ">=18.0.0"
+    }
+  },
 
-// ========================================
-// DÉMARRAGE DU SERVEUR
-// ========================================
+  "fichier_env_exemple": {
+    "nom_fichier": ".env",
+    "contenu": "# Webflow API Credentials\nWEBFLOW_TOKEN=wf_your_token_here\nWEBFLOW_COLLECTION_ID=your_collection_id_here\n\n# Server Configuration\nPORT=8080"
+  },
 
-const server = app.listen(PORT, () => {
-  console.log('═══════════════════════════════════════');
-  console.log(`🚀 API ValrJob démarrée sur le port ${PORT}`);
-  console.log('═══════════════════════════════════════');
-  console.log('📡 Endpoints disponibles:');
-  console.log('  GET    /health                  - Health check');
-  console.log('  GET    /api/offres              - Liste des offres');
-  console.log('  POST   /api/offres              - Créer une offre');
-  console.log('  PUT    /api/offres/:id          - Modifier une offre');
-  console.log('  DELETE /api/offres/:id          - Supprimer une offre');
-  console.log('  GET    /api/offres/:id          - Obtenir une offre');
-  console.log('  GET    /api/offres-by-slug/:slug - Obtenir par slug');
-  console.log('═══════════════════════════════════════');
-});
+  "notes_importantes": {
+    "cors": "Le serveur autorise uniquement valrjob.ch et www.valrjob.ch. Ajoutez d'autres domaines si nécessaire dans le code serveur.",
+    "rate_limits": "L'API Webflow a des limites de requêtes (environ 60/min). Utilisez la pagination pour les grandes listes.",
+    "securite": "Le panel admin n'a PAS d'authentification. Protégez l'accès via Webflow (page password-protected) ou ajoutez une authentification.",
+    "slug": "Les slugs ne sont générés qu'à la CRÉATION. Lors des modifications, le slug existant est conservé pour éviter les conflits.",
+    "publication": "Par défaut, les offres sont publiées immédiatement. Définissez 'publish: false' pour créer des brouillons.",
+    "cache": "Render.com peut mettre en veille les services gratuits après 15 min d'inactivité. La première requête peut prendre 30-60 secondes.",
+    "logs": "Consultez les logs sur Render.com pour déboguer les erreurs. Le code admin affiche aussi des logs détaillés dans la console du navigateur (F12).",
+    "backup": "Pensez à faire des exports réguliers de vos offres depuis Webflow CMS.",
+    "debug": "En cas d'erreur 500, ouvrez la console (F12) dans le navigateur pour voir les détails exacts de l'erreur retournée par le serveur."
+  },
 
-// Gestion propre de l'arrêt
-process.on('SIGTERM', () => {
-  console.log('📛 SIGTERM reçu, fermeture du serveur...');
-  server.close(() => {
-    console.log('✅ Serveur fermé proprement');
-    process.exit(0);
-  });
-});
+  "troubleshooting": {
+    "erreur_500_sauvegarde": {
+      "symptome": "Erreur 500 lors de la sauvegarde d'une offre",
+      "causes_possibles": [
+        "1. API identifier incorrect dans Webflow CMS (vérifier que tous les champs ont exactement les bons noms)",
+        "2. Token API Webflow expiré ou invalide",
+        "3. Collection ID incorrect",
+        "4. Champ requis manquant dans Webflow",
+        "5. Type de champ incorrect (ex: Number au lieu de Plain text)"
+      ],
+      "solution": [
+        "1. Ouvrir la console du navigateur (F12) et regarder les logs détaillés",
+        "2. Vérifier les logs Render.com pour voir l'erreur exacte de Webflow",
+        "3. Comparer les API identifiers dans Webflow avec ceux dans le code",
+        "4. S'assurer que TOUS les champs sont en Plain text ou Rich text (pas Number)",
+        "5. Tester avec Postman/Insomnia en envoyant une requête directement à l'API"
+      ]
+    },
+    "erreur_500_creation": {
+      "symptome": "Erreur 500 lors de la création d'une offre",
+      "causes_possibles": [
+        "1. Slug déjà existant (peu probable avec timestamp)",
+        "2. Champ 'post' (titre) requis mais vide",
+        "3. Token API invalide"
+      ],
+      "solution": [
+        "1. Vérifier que le titre n'est pas vide",
+        "2. Consulter les logs Render.com",
+        "3. Tester la création via l'API directement"
+      ]
+    },
+    "offres_ne_chargent_pas": {
+      "symptome": "Les offres ne s'affichent pas dans l'admin ou sur le site public",
+      "causes_possibles": [
+        "1. URL de l'API incorrecte dans le code",
+        "2. Serveur Render en veille (premier chargement lent)",
+        "3. Erreur CORS",
+        "4. Aucune offre publiée dans Webflow"
+      ],
+      "solution": [
+        "1. Vérifier l'URL de l'API dans les codes HTML",
+        "2. Tester le health check: https://votre-api.onrender.com/health",
+        "3. Attendre 60 secondes si le serveur est en veille",
+        "4. Vérifier la console pour voir l'erreur exacte"
+      ]
+    }
+  },
 
-process.on('SIGINT', () => {
-  console.log('📛 SIGINT reçu, fermeture du serveur...');
-  server.close(() => {
-    console.log('✅ Serveur fermé proprement');
-    process.exit(0);
-  });
-});
-
-export default app;
+  "checklist_finale": [
+    "✅ Collection CMS créée avec les 12 champs",
+    "✅ API identifiers corrects (sensible à la casse)",
+    "✅ Token API Webflow obtenu",
+    "✅ Collection ID récupéré",
+    "✅ Serveur Node.js déployé sur Render",
+    "✅ Variables d'environnement configurées",
+    "✅ URL de l'API notée",
+    "✅ Code ADMIN intégré dans Webflow (page protégée)",
+    "✅ Code PUBLIC intégré dans Webflow (page publique)",
+    "✅ URLs API remplacées dans les deux codes",
+    "✅ Tests effectués (créer, modifier, supprimer)",
+    "✅ Site Webflow publié",
+    "✅ Offres visibles sur le site public"
+  ]
+}
