@@ -6,10 +6,7 @@ import cors from 'cors';
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// ========================================
 // MIDDLEWARE
-// ========================================
-
 app.use(cors({
   origin: [
     'https://valrjob.ch',
@@ -26,14 +23,11 @@ app.options('*', cors());
 app.use(express.json());
 
 app.use((req, res, next) => {
-  console.log(`📝 ${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// ========================================
 // HELPER FUNCTIONS
-// ========================================
-
 function requireEnv(name) {
   const val = process.env[name];
   if (!val) throw new Error(`Missing env: ${name}`);
@@ -53,10 +47,7 @@ function generateSlug(text) {
   return `${baseSlug}-${timestamp}`;
 }
 
-// ========================================
 // HEALTH CHECK
-// ========================================
-
 app.get('/health', (req, res) => {
   res.json({ 
     ok: true, 
@@ -65,10 +56,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ========================================
-// 1. LISTE DES OFFRES
-// ========================================
-
+// 1. LISTER LES OFFRES
 app.get('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -77,7 +65,7 @@ app.get('/api/offres', async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit || '100', 10), 100);
     const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
 
-    console.log('📡 Fetching items...');
+    console.log('Fetching items...');
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
     
@@ -85,13 +73,10 @@ app.get('/api/offres', async (req, res) => {
       headers: { 
         Authorization: `Bearer ${WEBFLOW_TOKEN}` 
       },
-      params: {
-        offset,
-        limit
-      }
+      params: { offset, limit }
     });
 
-    console.log(`✅ Received ${data?.items?.length || 0} items`);
+    console.log(`Received ${data?.items?.length || 0} items`);
 
     const items = (data?.items || []).map(item => ({
       id: item.id,
@@ -118,7 +103,7 @@ app.get('/api/offres', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ GET /api/offres error:', err?.response?.data || err.message);
+    console.error('GET /api/offres error:', err?.response?.data || err.message);
     res.status(500).json({ 
       ok: false, 
       error: err?.response?.data || err.message 
@@ -126,10 +111,7 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
-// ========================================
-// 2. CRÉER UNE NOUVELLE OFFRE
-// ========================================
-
+// 2. CRÉER UNE OFFRE (LIVE - publiée directement)
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -149,8 +131,15 @@ app.post('/api/offres', async (req, res) => {
       profile
     } = req.body || {};
 
+    if (!post) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Le champ "post" (titre) est requis' 
+      });
+    }
+
     const fieldData = {
-      post: post || '',
+      post: post,
       slug: generateSlug(post),
       'description-du-poste': description || '',
       'nom-de-lentreprise': company || '',
@@ -164,9 +153,10 @@ app.post('/api/offres', async (req, res) => {
       profil: profile || ''
     };
 
-    console.log('📤 Creating new offer:', { title: fieldData.post, slug: fieldData.slug });
+    console.log('Creating live offer:', { title: fieldData.post, slug: fieldData.slug });
 
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
+    // Utilise l'endpoint /items/live pour créer ET publier en une seule fois
+    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live`;
     
     const { data } = await axios.post(url, {
       fieldData
@@ -180,7 +170,7 @@ app.post('/api/offres', async (req, res) => {
       }
     });
 
-    console.log('✅ Item created:', data.id || data);
+    console.log('Item created and published:', data.id || data);
 
     res.json({ 
       ok: true, 
@@ -188,7 +178,8 @@ app.post('/api/offres', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ POST /api/offres error:', err?.response?.data || err.message);
+    console.error('POST /api/offres error:', err?.response?.data || err.message);
+    console.error('Full error:', JSON.stringify(err?.response?.data, null, 2));
     res.status(500).json({ 
       ok: false, 
       error: err?.response?.data || err.message 
@@ -196,10 +187,7 @@ app.post('/api/offres', async (req, res) => {
   }
 });
 
-// ========================================
 // 3. MODIFIER UNE OFFRE
-// ========================================
-
 app.put('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -220,7 +208,6 @@ app.put('/api/offres/:itemId', async (req, res) => {
       profile
     } = req.body || {};
 
-    // Ne pas régénérer le slug lors d'une modification
     const fieldData = {
       post: post || '',
       'description-du-poste': description || '',
@@ -235,7 +222,7 @@ app.put('/api/offres/:itemId', async (req, res) => {
       profil: profile || ''
     };
 
-    console.log('📤 Updating offer:', { itemId, title: fieldData.post });
+    console.log('Updating offer:', { itemId, title: fieldData.post });
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
     
@@ -248,7 +235,7 @@ app.put('/api/offres/:itemId', async (req, res) => {
       }
     });
 
-    console.log('✅ Offer updated successfully');
+    console.log('Offer updated successfully');
 
     res.json({ 
       ok: true, 
@@ -256,29 +243,23 @@ app.put('/api/offres/:itemId', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ PUT /api/offres/:itemId error:', err?.response?.data || err.message);
-    console.error('Full error:', JSON.stringify(err?.response?.data, null, 2));
+    console.error('PUT /api/offres/:itemId error:', err?.response?.data || err.message);
     res.status(500).json({ 
       ok: false, 
-      error: err?.response?.data || err.message,
-      details: err?.response?.data?.message || 'Unknown error'
+      error: err?.response?.data || err.message
     });
   }
 });
 
-// ========================================
-// 4. SUPPRIMER UNE OFFRE (Single Delete)
-// ========================================
-
+// 4. SUPPRIMER UNE OFFRE
 app.delete('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     const { itemId } = req.params;
 
-    console.log('🗑️ Deleting offer:', itemId);
+    console.log('Deleting offer:', itemId);
 
-    // Format Webflow pour supprimer un seul item
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
     
     const { data } = await axios.delete(url, {
@@ -291,7 +272,7 @@ app.delete('/api/offres/:itemId', async (req, res) => {
       }
     });
 
-    console.log('✅ Offer deleted successfully');
+    console.log('Offer deleted successfully');
 
     res.json({ 
       ok: true, 
@@ -300,7 +281,7 @@ app.delete('/api/offres/:itemId', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ DELETE /api/offres/:itemId error:', err?.response?.data || err.message);
+    console.error('DELETE /api/offres/:itemId error:', err?.response?.data || err.message);
     res.status(500).json({ 
       ok: false, 
       error: err?.response?.data || err.message 
@@ -308,17 +289,14 @@ app.delete('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-// ========================================
 // 5. OBTENIR UNE OFFRE PAR ID
-// ========================================
-
 app.get('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     const { itemId } = req.params;
 
-    console.log('🔍 Fetching offer by ID:', itemId);
+    console.log('Fetching offer by ID:', itemId);
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
     
@@ -345,7 +323,7 @@ app.get('/api/offres/:itemId', async (req, res) => {
       profil: data.fieldData?.profil || ''
     };
 
-    console.log('✅ Offer found');
+    console.log('Offer found');
 
     res.json({ 
       ok: true, 
@@ -353,7 +331,7 @@ app.get('/api/offres/:itemId', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ GET /api/offres/:itemId error:', err?.response?.data || err.message);
+    console.error('GET /api/offres/:itemId error:', err?.response?.data || err.message);
     res.status(500).json({ 
       ok: false, 
       error: err?.response?.data || err.message 
@@ -361,78 +339,9 @@ app.get('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-// ========================================
-// 6. OBTENIR UNE OFFRE PAR SLUG
-// ========================================
-
-app.get('/api/offres-by-slug/:slug', async (req, res) => {
-  try {
-    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
-    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
-    const { slug } = req.params;
-
-    console.log('🔍 Fetching offer by slug:', slug);
-
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-    
-    const { data } = await axios.get(url, {
-      headers: { 
-        Authorization: `Bearer ${WEBFLOW_TOKEN}` 
-      },
-      params: {
-        limit: 100
-      }
-    });
-
-    const item = (data?.items || []).find(i => i.fieldData?.slug === slug);
-    
-    if (!item) {
-      console.log('❌ Offer not found with slug:', slug);
-      return res.status(404).json({ 
-        ok: false, 
-        error: 'Item not found' 
-      });
-    }
-
-    const formattedItem = {
-      id: item.id,
-      name: item.fieldData?.post || '',
-      post: item.fieldData?.post || '',
-      slug: item.fieldData?.slug || '',
-      'description-du-poste': item.fieldData?.['description-du-poste'] || '',
-      'nom-de-lentreprise': item.fieldData?.['nom-de-lentreprise'] || '',
-      lieu: item.fieldData?.lieu || '',
-      'type-de-contrat': item.fieldData?.['type-de-contrat'] || '',
-      salaire: item.fieldData?.salaire || '',
-      email: item.fieldData?.email || '',
-      téléphone: item.fieldData?.téléphone || '',
-      adresse: item.fieldData?.adresse || '',
-      responsabilites: item.fieldData?.responsabilites || '',
-      profil: item.fieldData?.profil || ''
-    };
-
-    console.log('✅ Offer found by slug');
-
-    res.json({ 
-      ok: true, 
-      item: formattedItem 
-    });
-
-  } catch (err) {
-    console.error('❌ GET /api/offres-by-slug/:slug error:', err?.response?.data || err.message);
-    res.status(500).json({ 
-      ok: false, 
-      error: err?.response?.data || err.message 
-    });
-  }
-});
-
-// ========================================
 // GESTION D'ERREURS
-// ========================================
-
 app.use((err, req, res, next) => {
-  console.error('❌ Global error:', err);
+  console.error('Global error:', err);
   res.status(500).json({ 
     ok: false, 
     error: 'Internal server error',
@@ -440,42 +349,38 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ========================================
 // DÉMARRAGE
-// ========================================
-
 const server = app.listen(PORT, () => {
-  console.log('═══════════════════════════════════════');
-  console.log(`🚀 ValrJob API - Port ${PORT}`);
-  console.log(`📅 ${new Date().toISOString()}`);
-  console.log('═══════════════════════════════════════');
-  console.log('📡 Endpoints:');
+  console.log('========================================');
+  console.log(`ValrJob API - Port ${PORT}`);
+  console.log(`${new Date().toISOString()}`);
+  console.log('========================================');
+  console.log('Endpoints:');
   console.log('  GET    /health');
   console.log('  GET    /api/offres');
-  console.log('  POST   /api/offres');
+  console.log('  POST   /api/offres (LIVE endpoint)');
   console.log('  PUT    /api/offres/:id');
   console.log('  DELETE /api/offres/:id');
   console.log('  GET    /api/offres/:id');
-  console.log('  GET    /api/offres-by-slug/:slug');
-  console.log('═══════════════════════════════════════');
-  console.log('⚙️  Environment:');
-  console.log(`  TOKEN: ${process.env.WEBFLOW_TOKEN ? '✅' : '❌'}`);
-  console.log(`  COLLECTION: ${process.env.WEBFLOW_COLLECTION_ID ? '✅' : '❌'}`);
-  console.log('═══════════════════════════════════════');
+  console.log('========================================');
+  console.log('Environment:');
+  console.log(`  TOKEN: ${process.env.WEBFLOW_TOKEN ? 'OK' : 'MISSING'}`);
+  console.log(`  COLLECTION: ${process.env.WEBFLOW_COLLECTION_ID ? 'OK' : 'MISSING'}`);
+  console.log('========================================');
 });
 
 process.on('SIGTERM', () => {
-  console.log('📛 SIGTERM - Closing server...');
+  console.log('SIGTERM - Closing server...');
   server.close(() => {
-    console.log('✅ Server closed');
+    console.log('Server closed');
     process.exit(0);
   });
 });
 
 process.on('SIGINT', () => {
-  console.log('📛 SIGINT - Closing server...');
+  console.log('SIGINT - Closing server...');
   server.close(() => {
-    console.log('✅ Server closed');
+    console.log('Server closed');
     process.exit(0);
   });
 });
