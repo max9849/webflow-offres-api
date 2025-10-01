@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 8080;
 
 app.use(cors({
   origin: ['https://valrjob.ch', 'https://www.valrjob.ch', 'https://preview.webflow.com'],
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type']
 }));
 
