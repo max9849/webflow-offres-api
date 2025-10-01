@@ -153,6 +153,100 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
+// MODIFIER UNE OFFRE
+app.put('/api/offres/:id', async (req, res) => {
+  try {
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+    const { id } = req.params;
+
+    const {
+      post,
+      description,
+      company,
+      location,
+      email,
+      telephone,
+      responsibilities,
+      address,
+      profile
+    } = req.body;
+
+    if (!post) {
+      return res.status(400).json({ ok: false, error: 'Titre requis' });
+    }
+
+    console.log(`✏️ Modification de l'offre ${id}...`);
+
+    const webflowPayload = {
+      fieldData: {
+        name: post,
+        'description-du-poste': textToHTML(description),
+        'nom-de-lentreprise': company || '',
+        'lieu-2': location || '',
+        'email-3': email || '',
+        'telephone-2': telephone || '',
+        responsabilites: textToHTML(responsibilities),
+        'adresse-3': address || '',
+        'salaire-3': '',
+        profil: textToHTML(profile)
+      }
+    };
+
+    const response = await axios.patch(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
+      webflowPayload,
+      {
+        headers: {
+          'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ Offre modifiée avec succès');
+    res.json({ ok: true, item: response.data });
+
+  } catch (err) {
+    console.error('ERREUR modification:', err?.response?.data || err.message);
+    res.status(500).json({ 
+      ok: false, 
+      error: err?.response?.data || err.message 
+    });
+  }
+});
+
+// SUPPRIMER UNE OFFRE
+app.delete('/api/offres/:id', async (req, res) => {
+  try {
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+    const { id } = req.params;
+
+    console.log(`🗑️ Suppression de l'offre ${id}...`);
+
+    await axios.delete(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
+          'accept': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ Offre supprimée avec succès');
+    res.json({ ok: true, message: 'Offre supprimée' });
+
+  } catch (err) {
+    console.error('ERREUR suppression:', err?.response?.data || err.message);
+    res.status(500).json({ 
+      ok: false, 
+      error: err?.response?.data || err.message 
+    });
+  }
+});
+
 const server = app.listen(PORT, () => {
   console.log('========================================');
   console.log(`ValrJob API - Port ${PORT}`);
