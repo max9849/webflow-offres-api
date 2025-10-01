@@ -53,11 +53,7 @@ app.post('/api/offres', async (req, res) => {
       post,
       description,
       company,
-      location,
-      email,
-      telephone,
       responsibilities,
-      address,
       profile
     } = req.body;
 
@@ -67,18 +63,14 @@ app.post('/api/offres', async (req, res) => {
 
     const slug = generateSlug(post);
 
-    // TOUS LES CHAMPS
+    // SEULEMENT LES CHAMPS QUI EXISTENT DANS TON CMS
     const webflowPayload = {
       fieldData: {
         name: post,
         slug: slug,
         'description-du-poste': description || '',
         'nom-de-lentreprise': company || '',
-        lieu: location || '',
-        email: email || '',
-        téléphone: telephone || '',
         responsabilites: responsibilities || '',
-        adresse: address || '',
         profil: profile || ''
       }
     };
