@@ -78,18 +78,19 @@ app.post('/api/offres', async (req, res) => {
 
     const slug = generateSlug(post);
 
-    // LES 9 CHAMPS - 4 RENOMMÉS + Rich text en HTML
+    // LES 9 CHAMPS AVEC LES VRAIS SLUGS WEBFLOW
     const webflowPayload = {
       fieldData: {
         name: post,
         slug: slug,
         'description-du-poste': textToHTML(description),
         'nom-de-lentreprise': company || '',
-        'lieu-travail': location || '',
-        'email-contact': email || '',
-        'telephone-contact': telephone || '',
+        'lieu-2': location || '',
+        'email-3': email || '',
+        'telephone-2': telephone || '',
         responsabilites: textToHTML(responsibilities),
-        'adresse-postal': address || '',
+        'adresse-3': address || '',
+        'salaire-3': '',
         profil: textToHTML(profile)
       }
     };
