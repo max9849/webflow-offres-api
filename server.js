@@ -51,7 +51,14 @@ app.post('/api/offres', async (req, res) => {
 
     const {
       post,
-      description
+      description,
+      company,
+      location,
+      email,
+      telephone,
+      responsibilities,
+      address,
+      profile
     } = req.body;
 
     if (!post) {
@@ -60,12 +67,19 @@ app.post('/api/offres', async (req, res) => {
 
     const slug = generateSlug(post);
 
-    // SEULEMENT 2 CHAMPS + slug
+    // TOUS LES CHAMPS
     const webflowPayload = {
       fieldData: {
         name: post,
         slug: slug,
-        'description-du-poste': description || ''
+        'description-du-poste': description || '',
+        'nom-de-lentreprise': company || '',
+        lieu: location || '',
+        email: email || '',
+        téléphone: telephone || '',
+        responsabilites: responsibilities || '',
+        adresse: address || '',
+        profil: profile || ''
       }
     };
 
