@@ -57,7 +57,7 @@ app.post('/api/offres', async (req, res) => {
       email,
       telephone,
       responsibilities,
-      address,
+      xy,
       profile
     } = req.body;
 
@@ -78,7 +78,7 @@ app.post('/api/offres', async (req, res) => {
         email: email || '',
         téléphone: telephone || '',
         responsabilites: responsibilities || '',
-        adresse: address || '',
+        adresse: xy || '',
         profil: profile || ''
       }
     };
