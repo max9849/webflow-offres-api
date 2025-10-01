@@ -10,7 +10,6 @@ const PORT = process.env.PORT || 8080;
 // MIDDLEWARE
 // ========================================
 
-// CORS - Autorise valrjob.ch
 app.use(cors({
   origin: [
     'https://valrjob.ch',
@@ -24,14 +23,35 @@ app.use(cors({
 }));
 
 app.options('*', cors());
-
 app.use(express.json());
 
-// Logging middleware
 app.use((req, res, next) => {
   console.log(`📝 ${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+
+function requireEnv(name) {
+  const val = process.env[name];
+  if (!val) throw new Error(`Missing env: ${name}`);
+  return val;
+}
+
+function generateSlug(text) {
+  const baseSlug = (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  
+  const timestamp = Date.now().toString().slice(-6);
+  return `${baseSlug}-${timestamp}`;
+}
 
 // ========================================
 // HEALTH CHECK
@@ -46,93 +66,28 @@ app.get('/health', (req, res) => {
 });
 
 // ========================================
-// HELPER FUNCTIONS
+// 1. LISTE DES OFFRES
 // ========================================
 
-function requireEnv(name) {
-  const val = process.env[name];
-  if (!val) throw new Error(`Missing env: ${name}`);
-  return val;
-}
-
-// Génère un slug unique
-function generateSlug(text) {
-  const baseSlug = (text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-  
-  const timestamp = Date.now().toString().slice(-6);
-  return `${baseSlug}-${timestamp}`;
-}
-
-// Transforme le body en fieldData Webflow
-// isUpdate=true pour ne pas regénérer le slug lors des modifications
-function buildFieldData(body, isUpdate = false) {
-  const {
-    post,
-    description,
-    company,
-    location,
-    type,
-    salary,
-    email,
-    telephone,
-    address,
-    responsibilities,
-    profile
-  } = body || {};
-
-  const fieldData = {
-    post: post || '',
-    'description-du-poste': description || '',
-    'nom-de-lentreprise': company || '',
-    lieu: location || '',
-    'type-de-contrat': type || '',
-    salaire: salary || '',
-    email: email || '',
-    téléphone: telephone || '',
-    adresse: address || '',
-    responsabilites: responsibilities || '',
-    profil: profile || ''
-  };
-
-  // IMPORTANT : Ne générer un nouveau slug que lors de la création
-  // Lors d'une modification, le slug existant est conservé
-  if (!isUpdate) {
-    fieldData.slug = generateSlug(post);
-  }
-
-  return fieldData;
-}
-
-// ========================================
-// ROUTES API
-// ========================================
-
-// 📋 LISTE DES OFFRES PUBLIÉES
 app.get('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     
-    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
+    const limit = Math.min(parseInt(req.query.limit || '100', 10), 100);
     const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
+
+    console.log('📡 Fetching items...');
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
     
-    console.log('📡 Fetching items from Webflow...');
-    
     const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` },
+      headers: { 
+        Authorization: `Bearer ${WEBFLOW_TOKEN}` 
+      },
       params: {
-        limit,
         offset,
-        isDraft: false,
-        isArchived: false
+        limit
       }
     });
 
@@ -140,7 +95,7 @@ app.get('/api/offres', async (req, res) => {
 
     const items = (data?.items || []).map(item => ({
       id: item.id,
-      name: item.fieldData?.post || item.fieldData?.name || '',
+      name: item.fieldData?.post || '',
       post: item.fieldData?.post || '',
       slug: item.fieldData?.slug || '',
       'description-du-poste': item.fieldData?.['description-du-poste'] || '',
@@ -171,55 +126,69 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
-// ➕ CRÉER UNE NOUVELLE OFFRE
+// ========================================
+// 2. CRÉER UNE NOUVELLE OFFRE
+// ========================================
+
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
 
-    const fieldData = buildFieldData(req.body, false); // false = création
-    const publish = req.body.publish !== false;
+    const {
+      post,
+      description,
+      company,
+      location,
+      type,
+      salary,
+      email,
+      telephone,
+      address,
+      responsibilities,
+      profile
+    } = req.body || {};
 
-    console.log('📤 Creating new offer:', { 
-      title: fieldData.post, 
-      slug: fieldData.slug,
-      publish 
-    });
+    const fieldData = {
+      post: post || '',
+      slug: generateSlug(post),
+      'description-du-poste': description || '',
+      'nom-de-lentreprise': company || '',
+      lieu: location || '',
+      'type-de-contrat': type || '',
+      salaire: salary || '',
+      email: email || '',
+      téléphone: telephone || '',
+      adresse: address || '',
+      responsabilites: responsibilities || '',
+      profil: profile || ''
+    };
 
-    // Créer l'item
-    const createUrl = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
-    const { data: created } = await axios.post(createUrl, {
-      fieldData,
-      isDraft: !publish
+    console.log('📤 Creating new offer:', { title: fieldData.post, slug: fieldData.slug });
+
+    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
+    
+    const { data } = await axios.post(url, {
+      fieldData
     }, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
+      headers: { 
+        Authorization: `Bearer ${WEBFLOW_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      params: {
+        skipInvalidFiles: true
+      }
     });
 
-    console.log('✅ Item created:', created.id);
-
-    // Publier si demandé
-    if (publish && created.id) {
-      try {
-        const publishUrl = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/publish`;
-        await axios.post(publishUrl, {
-          itemIds: [created.id]
-        }, {
-          headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
-        });
-        console.log('✅ Item published');
-      } catch (pubErr) {
-        console.error('⚠️ Publication error (non-blocking):', pubErr?.response?.data);
-      }
-    }
+    console.log('✅ Item created:', data.id || data);
 
     res.json({ 
       ok: true, 
-      item: created 
+      item: data 
     });
 
   } catch (err) {
     console.error('❌ POST /api/offres error:', err?.response?.data || err.message);
-    console.error('Full error:', err);
     res.status(500).json({ 
       ok: false, 
       error: err?.response?.data || err.message 
@@ -227,29 +196,56 @@ app.post('/api/offres', async (req, res) => {
   }
 });
 
-// ✏️ MODIFIER UNE OFFRE (PUT)
+// ========================================
+// 3. MODIFIER UNE OFFRE
+// ========================================
+
 app.put('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
     const { itemId } = req.params;
 
-    // isUpdate=true pour NE PAS regénérer le slug
-    const fieldData = buildFieldData(req.body, true);
-    
-    console.log('📤 Updating offer:', { 
-      itemId, 
-      title: fieldData.post,
-      fieldsToUpdate: Object.keys(fieldData)
-    });
-    console.log('📦 Field data:', fieldData);
+    const {
+      post,
+      description,
+      company,
+      location,
+      type,
+      salary,
+      email,
+      telephone,
+      address,
+      responsibilities,
+      profile
+    } = req.body || {};
+
+    // Ne pas régénérer le slug lors d'une modification
+    const fieldData = {
+      post: post || '',
+      'description-du-poste': description || '',
+      'nom-de-lentreprise': company || '',
+      lieu: location || '',
+      'type-de-contrat': type || '',
+      salaire: salary || '',
+      email: email || '',
+      téléphone: telephone || '',
+      adresse: address || '',
+      responsabilites: responsibilities || '',
+      profil: profile || ''
+    };
+
+    console.log('📤 Updating offer:', { itemId, title: fieldData.post });
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
     
     const { data } = await axios.patch(url, {
       fieldData
     }, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
+      headers: { 
+        Authorization: `Bearer ${WEBFLOW_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
     });
 
     console.log('✅ Offer updated successfully');
@@ -261,7 +257,7 @@ app.put('/api/offres/:itemId', async (req, res) => {
 
   } catch (err) {
     console.error('❌ PUT /api/offres/:itemId error:', err?.response?.data || err.message);
-    console.error('Full error:', err);
+    console.error('Full error:', JSON.stringify(err?.response?.data, null, 2));
     res.status(500).json({ 
       ok: false, 
       error: err?.response?.data || err.message,
@@ -270,7 +266,10 @@ app.put('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-// 🗑️ SUPPRIMER UNE OFFRE
+// ========================================
+// 4. SUPPRIMER UNE OFFRE (Single Delete)
+// ========================================
+
 app.delete('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -279,17 +278,25 @@ app.delete('/api/offres/:itemId', async (req, res) => {
 
     console.log('🗑️ Deleting offer:', itemId);
 
-    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
+    // Format Webflow pour supprimer un seul item
+    const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
     
-    await axios.delete(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
+    const { data } = await axios.delete(url, {
+      headers: { 
+        Authorization: `Bearer ${WEBFLOW_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        items: [{ id: itemId }]
+      }
     });
 
     console.log('✅ Offer deleted successfully');
 
     res.json({ 
       ok: true, 
-      message: 'Item deleted successfully' 
+      message: 'Item deleted successfully',
+      data 
     });
 
   } catch (err) {
@@ -301,7 +308,10 @@ app.delete('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-// 🔍 OBTENIR UNE OFFRE PAR ID
+// ========================================
+// 5. OBTENIR UNE OFFRE PAR ID
+// ========================================
+
 app.get('/api/offres/:itemId', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -313,12 +323,14 @@ app.get('/api/offres/:itemId', async (req, res) => {
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${itemId}`;
     
     const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` }
+      headers: { 
+        Authorization: `Bearer ${WEBFLOW_TOKEN}` 
+      }
     });
 
     const item = {
       id: data.id,
-      name: data.fieldData?.post || data.fieldData?.name || '',
+      name: data.fieldData?.post || '',
       post: data.fieldData?.post || '',
       slug: data.fieldData?.slug || '',
       'description-du-poste': data.fieldData?.['description-du-poste'] || '',
@@ -349,7 +361,10 @@ app.get('/api/offres/:itemId', async (req, res) => {
   }
 });
 
-// 🔍 OBTENIR UNE OFFRE PAR SLUG
+// ========================================
+// 6. OBTENIR UNE OFFRE PAR SLUG
+// ========================================
+
 app.get('/api/offres-by-slug/:slug', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -361,11 +376,11 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`;
     
     const { data } = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WEBFLOW_TOKEN}` },
+      headers: { 
+        Authorization: `Bearer ${WEBFLOW_TOKEN}` 
+      },
       params: {
-        limit: 100,
-        isDraft: false,
-        isArchived: false
+        limit: 100
       }
     });
 
@@ -381,7 +396,7 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
 
     const formattedItem = {
       id: item.id,
-      name: item.fieldData?.post || item.fieldData?.name || '',
+      name: item.fieldData?.post || '',
       post: item.fieldData?.post || '',
       slug: item.fieldData?.slug || '',
       'description-du-poste': item.fieldData?.['description-du-poste'] || '',
@@ -413,11 +428,11 @@ app.get('/api/offres-by-slug/:slug', async (req, res) => {
 });
 
 // ========================================
-// GESTION D'ERREURS GLOBALE
+// GESTION D'ERREURS
 // ========================================
 
 app.use((err, req, res, next) => {
-  console.error('❌ Global error handler:', err);
+  console.error('❌ Global error:', err);
   res.status(500).json({ 
     ok: false, 
     error: 'Internal server error',
@@ -426,42 +441,41 @@ app.use((err, req, res, next) => {
 });
 
 // ========================================
-// DÉMARRAGE DU SERVEUR
+// DÉMARRAGE
 // ========================================
 
 const server = app.listen(PORT, () => {
   console.log('═══════════════════════════════════════');
-  console.log(`🚀 API ValrJob démarrée sur le port ${PORT}`);
+  console.log(`🚀 ValrJob API - Port ${PORT}`);
   console.log(`📅 ${new Date().toISOString()}`);
   console.log('═══════════════════════════════════════');
-  console.log('📡 Endpoints disponibles:');
-  console.log('  GET    /health                       - Health check');
-  console.log('  GET    /api/offres                   - Liste des offres');
-  console.log('  POST   /api/offres                   - Créer une offre');
-  console.log('  PUT    /api/offres/:id               - Modifier une offre');
-  console.log('  DELETE /api/offres/:id               - Supprimer une offre');
-  console.log('  GET    /api/offres/:id               - Obtenir une offre');
-  console.log('  GET    /api/offres-by-slug/:slug     - Obtenir par slug');
+  console.log('📡 Endpoints:');
+  console.log('  GET    /health');
+  console.log('  GET    /api/offres');
+  console.log('  POST   /api/offres');
+  console.log('  PUT    /api/offres/:id');
+  console.log('  DELETE /api/offres/:id');
+  console.log('  GET    /api/offres/:id');
+  console.log('  GET    /api/offres-by-slug/:slug');
   console.log('═══════════════════════════════════════');
-  console.log('⚙️  Variables d\'environnement:');
-  console.log(`  WEBFLOW_TOKEN: ${process.env.WEBFLOW_TOKEN ? '✅ Configuré' : '❌ Manquant'}`);
-  console.log(`  WEBFLOW_COLLECTION_ID: ${process.env.WEBFLOW_COLLECTION_ID ? '✅ Configuré' : '❌ Manquant'}`);
+  console.log('⚙️  Environment:');
+  console.log(`  TOKEN: ${process.env.WEBFLOW_TOKEN ? '✅' : '❌'}`);
+  console.log(`  COLLECTION: ${process.env.WEBFLOW_COLLECTION_ID ? '✅' : '❌'}`);
   console.log('═══════════════════════════════════════');
 });
 
-// Gestion propre de l'arrêt
 process.on('SIGTERM', () => {
-  console.log('📛 SIGTERM reçu, fermeture du serveur...');
+  console.log('📛 SIGTERM - Closing server...');
   server.close(() => {
-    console.log('✅ Serveur fermé proprement');
+    console.log('✅ Server closed');
     process.exit(0);
   });
 });
 
 process.on('SIGINT', () => {
-  console.log('📛 SIGINT reçu, fermeture du serveur...');
+  console.log('📛 SIGINT - Closing server...');
   server.close(() => {
-    console.log('✅ Serveur fermé proprement');
+    console.log('✅ Server closed');
     process.exit(0);
   });
 });
