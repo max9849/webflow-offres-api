@@ -43,7 +43,7 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, api: 'v2', timestamp: new Date().toISOString() });
 });
 
-// CRÉER UNE OFFRE - FORMAT EXACT WEBFLOW
+// CRÉER UNE OFFRE AVEC LES 9 CHAMPS
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -53,7 +53,11 @@ app.post('/api/offres', async (req, res) => {
       post,
       description,
       company,
+      location,
+      email,
+      telephone,
       responsibilities,
+      address,
       profile
     } = req.body;
 
@@ -63,14 +67,18 @@ app.post('/api/offres', async (req, res) => {
 
     const slug = generateSlug(post);
 
-    // SEULEMENT LES CHAMPS QUI EXISTENT DANS TON CMS
+    // LES 9 CHAMPS COMPLETS
     const webflowPayload = {
       fieldData: {
         name: post,
         slug: slug,
         'description-du-poste': description || '',
         'nom-de-lentreprise': company || '',
+        lieu: location || '',
+        email: email || '',
+        téléphone: telephone || '',
         responsabilites: responsibilities || '',
+        adresse: address || '',
         profil: profile || ''
       }
     };
@@ -103,7 +111,7 @@ const server = app.listen(PORT, () => {
   console.log('========================================');
   console.log(`ValrJob API - Port ${PORT}`);
   console.log('========================================');
-  console.log('POST /api/offres - Créer offre');
+  console.log('POST /api/offres - Créer offre (9 champs)');
   console.log('========================================');
   console.log(`TOKEN: ${process.env.WEBFLOW_TOKEN ? 'OK' : 'MANQUANT'}`);
   console.log(`COLLECTION: ${process.env.WEBFLOW_COLLECTION_ID ? 'OK' : 'MANQUANT'}`);
