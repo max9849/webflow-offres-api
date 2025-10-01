@@ -118,6 +118,41 @@ app.post('/api/offres', async (req, res) => {
   }
 });
 
+// RÉCUPÉRER TOUTES LES OFFRES PUBLIÉES
+app.get('/api/offres', async (req, res) => {
+  try {
+    const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
+    const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
+
+    console.log('📖 Récupération des offres publiées...');
+
+    const response = await axios.get(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`,
+      {
+        headers: {
+          'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
+          'accept': 'application/json'
+        }
+      }
+    );
+
+    console.log(`✅ ${response.data.items?.length || 0} offres récupérées`);
+
+    res.json({ 
+      ok: true, 
+      items: response.data.items || [],
+      total: response.data.items?.length || 0
+    });
+
+  } catch (err) {
+    console.error('ERREUR récupération:', err?.response?.data || err.message);
+    res.status(500).json({ 
+      ok: false, 
+      error: err?.response?.data || err.message 
+    });
+  }
+});
+
 const server = app.listen(PORT, () => {
   console.log('========================================');
   console.log(`ValrJob API - Port ${PORT}`);
