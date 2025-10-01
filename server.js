@@ -178,23 +178,31 @@ app.put('/api/offres/:id', async (req, res) => {
 
     console.log(`✏️ Modification de l'offre ${id}...`);
 
+    // Format Webflow API v2 pour PATCH /items/live
     const webflowPayload = {
-      fieldData: {
-        name: post,
-        'description-du-poste': textToHTML(description),
-        'nom-de-lentreprise': company || '',
-        'lieu-2': location || '',
-        'email-3': email || '',
-        'telephone-2': telephone || '',
-        responsabilites: textToHTML(responsibilities),
-        'adresse-3': address || '',
-        'salaire-3': '',
-        profil: textToHTML(profile)
-      }
+      items: [
+        {
+          id: id,
+          fieldData: {
+            name: post,
+            'description-du-poste': textToHTML(description),
+            'nom-de-lentreprise': company || '',
+            'lieu-2': location || '',
+            'email-3': email || '',
+            'telephone-2': telephone || '',
+            responsabilites: textToHTML(responsibilities),
+            'adresse-3': address || '',
+            'salaire-3': '',
+            profil: textToHTML(profile)
+          }
+        }
+      ]
     };
 
+    console.log('Envoi à Webflow:', JSON.stringify(webflowPayload, null, 2));
+
     const response = await axios.patch(
-      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live?skipInvalidFiles=true`,
       webflowPayload,
       {
         headers: {
@@ -225,13 +233,23 @@ app.delete('/api/offres/:id', async (req, res) => {
 
     console.log(`🗑️ Suppression de l'offre ${id}...`);
 
-    await axios.delete(
-      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
+    // Format Webflow API v2 pour DELETE /items/live
+    const webflowPayload = {
+      items: [
+        {
+          id: id
+        }
+      ]
+    };
+
+    const response = await axios.delete(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live`,
       {
         headers: {
           'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
-          'accept': 'application/json'
-        }
+          'Content-Type': 'application/json'
+        },
+        data: webflowPayload
       }
     );
 
