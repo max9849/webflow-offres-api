@@ -39,6 +39,17 @@ function generateSlug(text) {
   return `${baseSlug}-${timestamp}`;
 }
 
+// Convertir texte simple en HTML pour Rich text Webflow
+function textToHTML(text) {
+  if (!text || text.trim() === '') return '';
+  
+  // Séparer par lignes et créer des paragraphes
+  const lines = text.split('\n').filter(line => line.trim() !== '');
+  const paragraphs = lines.map(line => `<p>${line.trim()}</p>`).join('');
+  
+  return paragraphs;
+}
+
 app.get('/health', (req, res) => {
   res.json({ ok: true, api: 'v2', timestamp: new Date().toISOString() });
 });
@@ -67,19 +78,19 @@ app.post('/api/offres', async (req, res) => {
 
     const slug = generateSlug(post);
 
-    // LES 9 CHAMPS - 4 RENOMMÉS
+    // LES 9 CHAMPS - 4 RENOMMÉS + Rich text en HTML
     const webflowPayload = {
       fieldData: {
         name: post,
         slug: slug,
-        'description-du-poste': description || '',
+        'description-du-poste': textToHTML(description),
         'nom-de-lentreprise': company || '',
         'lieu-travail': location || '',
         'email-contact': email || '',
         'telephone-contact': telephone || '',
-        responsabilites: responsibilities || '',
+        responsabilites: textToHTML(responsibilities),
         'adresse-postal': address || '',
-        profil: profile || ''
+        profil: textToHTML(profile)
       }
     };
 
