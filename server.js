@@ -139,7 +139,7 @@ app.post('/api/offres', async (req, res) => {
     }
 
     const fieldData = {
-      post: post,
+      name: post,  // ← name, pas post !
       slug: generateSlug(post),
       'description-du-poste': description || '',
       'nom-de-lentreprise': company || '',
@@ -153,7 +153,7 @@ app.post('/api/offres', async (req, res) => {
       profil: profile || ''
     };
 
-    console.log('Creating live offer:', { title: fieldData.post, slug: fieldData.slug });
+    console.log('Creating live offer:', { title: fieldData.name, slug: fieldData.slug });
 
     // Utilise l'endpoint /items/live pour créer ET publier en une seule fois
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live`;
