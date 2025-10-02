@@ -178,31 +178,25 @@ app.put('/api/offres/:id', async (req, res) => {
 
     console.log(`✏️ Modification de l'offre ${id}...`);
 
-    // Format Webflow API v2 pour PATCH /items/live
+    // Étape 1 : Modifier l'item (draft)
     const webflowPayload = {
-      items: [
-        {
-          id: id,
-          fieldData: {
-            name: post,
-            'description-du-poste': textToHTML(description),
-            'nom-de-lentreprise': company || '',
-            'lieu-2': location || '',
-            'email-3': email || '',
-            'telephone-2': telephone || '',
-            responsabilites: textToHTML(responsibilities),
-            'adresse-3': address || '',
-            'salaire-3': '',
-            profil: textToHTML(profile)
-          }
-        }
-      ]
+      fieldData: {
+        name: post,
+        'description-du-poste': textToHTML(description),
+        'nom-de-lentreprise': company || '',
+        'lieu-2': location || '',
+        'email-3': email || '',
+        'telephone-2': telephone || '',
+        responsabilites: textToHTML(responsibilities),
+        'adresse-3': address || '',
+        'salaire-3': '',
+        profil: textToHTML(profile)
+      }
     };
 
-    console.log('Envoi à Webflow:', JSON.stringify(webflowPayload, null, 2));
-
-    const response = await axios.patch(
-      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live?skipInvalidFiles=true`,
+    console.log('Modification de l\'item draft...');
+    const updateResponse = await axios.patch(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
       webflowPayload,
       {
         headers: {
@@ -212,8 +206,23 @@ app.put('/api/offres/:id', async (req, res) => {
       }
     );
 
-    console.log('✅ Offre modifiée avec succès');
-    res.json({ ok: true, item: response.data });
+    // Étape 2 : Publier les modifications
+    console.log('Publication des modifications...');
+    await axios.post(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/publish`,
+      {
+        itemIds: [id]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ Offre modifiée et publiée avec succès');
+    res.json({ ok: true, item: updateResponse.data });
 
   } catch (err) {
     console.error('ERREUR modification:', err?.response?.data || err.message);
@@ -233,27 +242,39 @@ app.delete('/api/offres/:id', async (req, res) => {
 
     console.log(`🗑️ Suppression de l'offre ${id}...`);
 
-    // Format Webflow API v2 pour DELETE /items/live
-    const webflowPayload = {
-      items: [
+    // Étape 1 : Dépublier l'item (unpublish)
+    console.log('Étape 1: Dépublication de l\'item...');
+    try {
+      await axios.delete(
+        `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live`,
         {
-          id: id
+          headers: {
+            'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          data: {
+            itemIds: [id]
+          }
         }
-      ]
-    };
+      );
+      console.log('✅ Item dépublié');
+    } catch (unpublishError) {
+      console.log('⚠️ Erreur dépublication (peut-être déjà dépublié):', unpublishError?.response?.data);
+    }
 
-    const response = await axios.delete(
-      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live`,
+    // Étape 2 : Supprimer l'item
+    console.log('Étape 2: Suppression de l\'item...');
+    await axios.delete(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
       {
         headers: {
           'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        data: webflowPayload
+          'accept': 'application/json'
+        }
       }
     );
 
-    console.log('✅ Offre supprimée avec succès');
+    console.log('✅ Offre complètement supprimée');
     res.json({ ok: true, message: 'Offre supprimée' });
 
   } catch (err) {
