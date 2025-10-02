@@ -178,25 +178,30 @@ app.put('/api/offres/:id', async (req, res) => {
 
     console.log(`✏️ Modification de l'offre ${id}...`);
 
-    // Étape 1 : Modifier l'item (draft)
+    // Modifier directement l'item live avec PATCH /items/live
     const webflowPayload = {
-      fieldData: {
-        name: post,
-        'description-du-poste': textToHTML(description),
-        'nom-de-lentreprise': company || '',
-        'lieu-2': location || '',
-        'email-3': email || '',
-        'telephone-2': telephone || '',
-        responsabilites: textToHTML(responsibilities),
-        'adresse-3': address || '',
-        'salaire-3': '',
-        profil: textToHTML(profile)
-      }
+      items: [
+        {
+          id: id,
+          fieldData: {
+            name: post,
+            'description-du-poste': textToHTML(description),
+            'nom-de-lentreprise': company || '',
+            'lieu-2': location || '',
+            'email-3': email || '',
+            'telephone-2': telephone || '',
+            responsabilites: textToHTML(responsibilities),
+            'adresse-3': address || '',
+            'salaire-3': '',
+            profil: textToHTML(profile)
+          }
+        }
+      ]
     };
 
-    console.log('Modification de l\'item draft...');
-    const updateResponse = await axios.patch(
-      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
+    console.log('Modification de l\'item live...');
+    const response = await axios.patch(
+      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live?skipInvalidFiles=true`,
       webflowPayload,
       {
         headers: {
@@ -206,23 +211,8 @@ app.put('/api/offres/:id', async (req, res) => {
       }
     );
 
-    // Étape 2 : Publier les modifications
-    console.log('Publication des modifications...');
-    await axios.post(
-      `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/publish`,
-      {
-        itemIds: [id]
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    console.log('✅ Offre modifiée et publiée avec succès');
-    res.json({ ok: true, item: updateResponse.data });
+    console.log('✅ Offre live modifiée avec succès');
+    res.json({ ok: true, item: response.data });
 
   } catch (err) {
     console.error('ERREUR modification:', err?.response?.data || err.message);
