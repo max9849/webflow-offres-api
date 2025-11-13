@@ -50,18 +50,47 @@ function textToHTML(text) {
   return paragraphs;
 }
 
+// 🔥 GÉNÉRATION DES META TAGS SEO
+function generateMetaTags(offerData) {
+  const title = (offerData.post || offerData.name || 'Offre d\'emploi').trim();
+  const company = (offerData.company || '').trim();
+  const location = (offerData.location || '').trim();
+  const description = (offerData.description || '').trim();
+  const responsibilities = (offerData.responsibilities || '').trim();
+  
+  // Meta Title (max 60 caractères)
+  const metaTitle = company 
+    ? `${title} - ${company} | ValrJob`.substring(0, 60)
+    : `${title} | ValrJob`.substring(0, 60);
+  
+  // Meta Description (max 155 caractères)
+  const cleanDescription = (description + ' ' + responsibilities)
+    .replace(/<[^>]*>/g, '')
+    .substring(0, 140)
+    .trim();
+  
+  const metaDescription = cleanDescription 
+    ? `${cleanDescription}. Postulez via ValrJob.ch`.substring(0, 155)
+    : `Postulez pour le poste de ${title}${company ? ' chez ' + company : ''}${location ? ' à ' + location : ''}. Agence de recrutement ValrJob en Suisse romande.`.substring(0, 155);
+  
+  return {
+    metaTitle,
+    metaDescription
+  };
+}
+
 app.get('/health', (req, res) => {
-  res.json({ ok: true, api: 'v5-final', timestamp: new Date().toISOString() });
+  res.json({ ok: true, api: 'v7-working', timestamp: new Date().toISOString() });
 });
 
-// 🔥 CRÉER UNE OFFRE - VERSION FINALE QUI FONCTIONNE
+// 🔥 CRÉER UNE OFFRE AVEC LES VRAIS NOMS DE CHAMPS
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
 
     const {
-      post,
+      post: postTitle,
       description,
       company,
       location,
@@ -72,36 +101,50 @@ app.post('/api/offres', async (req, res) => {
       profile
     } = req.body;
 
-    console.log('📝 Création offre:', { post, company, location });
+    console.log('📝 Création offre:', { postTitle, company, location });
 
-    if (!post) {
+    if (!postTitle || postTitle.trim() === '') {
       return res.status(400).json({ ok: false, error: 'Titre requis' });
     }
 
-    const slug = generateSlug(post);
+    const slug = generateSlug(postTitle);
 
-    // ✅ PAYLOAD AVEC UNIQUEMENT LES CHAMPS QUI EXISTENT DANS WEBFLOW
+    // 🔥 GÉNÉRER LES META TAGS SEO
+    const { metaTitle, metaDescription } = generateMetaTags({
+      post: postTitle,
+      company,
+      location,
+      description,
+      responsibilities
+    });
+
+    console.log('🎯 Meta tags:', { metaTitle, metaDescription });
+
+    // ✅ PAYLOAD AVEC LES VRAIS NOMS DE CHAMPS WEBFLOW
     const webflowPayload = {
       fieldData: {
-        // Basic info (Required)
-        name: post,
+        // ⚠️ CORRECTION CRITIQUE : le champ s'appelle "post" et NON "name" !
+        post: postTitle.trim(),
         slug: slug,
         
-        // Custom fields (UNIQUEMENT ceux qui existent dans Webflow)
+        // Custom fields avec les VRAIS noms
         'description-du-poste': textToHTML(description),
-        'nom-de-lentreprise': company || '',
-        'lieu-travail': location || '',
-        'email-contact': email || '',
-        'telephone-contact': telephone || '',
-        'responsabilites': textToHTML(responsibilities),
-        'profil': textToHTML(profile),
-        'adresse-postal': address || '',
-        'salaire': ''
+        'nom-de-lentreprise': (company || '').trim(),
+        'lieu-travail': (location || '').trim(),
+        'email-contact': (email || '').trim(),
+        'telephone-contact': (telephone || '').trim(),
+        responsabilites: textToHTML(responsibilities),
+        profil: textToHTML(profile),
+        'adresse-postal': (address || '').trim(),
+        salaire: '',
+        
+        // SEO meta tags
+        'meta-title': metaTitle,
+        'meta-description': metaDescription
       }
     };
 
     console.log('📤 Champs envoyés:', Object.keys(webflowPayload.fieldData));
-    console.log('📦 Payload complet:', JSON.stringify(webflowPayload, null, 2));
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live?skipInvalidFiles=true`;
     
@@ -116,17 +159,15 @@ app.post('/api/offres', async (req, res) => {
     res.json({ ok: true, item: response.data });
 
   } catch (err) {
-    console.error('❌ ERREUR CRÉATION DÉTAILLÉE:', {
+    console.error('❌ ERREUR CRÉATION:', {
       message: err.message,
-      response: err?.response?.data,
       status: err?.response?.status,
-      details: JSON.stringify(err?.response?.data?.details, null, 2)
+      data: err?.response?.data
     });
     
     res.status(500).json({ 
       ok: false, 
-      error: err?.response?.data || err.message,
-      details: err?.response?.data?.details
+      error: err?.response?.data || err.message
     });
   }
 });
@@ -137,7 +178,7 @@ app.get('/api/offres', async (req, res) => {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
     const WEBFLOW_COLLECTION_ID = requireEnv('WEBFLOW_COLLECTION_ID');
 
-    console.log('📖 Récupération des offres publiées...');
+    console.log('📖 Récupération des offres...');
 
     const response = await axios.get(
       `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items`,
@@ -174,7 +215,7 @@ app.put('/api/offres/:id', async (req, res) => {
     const { id } = req.params;
 
     const {
-      post,
+      post: postTitle,
       description,
       company,
       location,
@@ -185,34 +226,47 @@ app.put('/api/offres/:id', async (req, res) => {
       profile
     } = req.body;
 
-    if (!post) {
+    if (!postTitle || postTitle.trim() === '') {
       return res.status(400).json({ ok: false, error: 'Titre requis' });
     }
 
     console.log(`✏️ Modification de l'offre ${id}...`);
 
-    // ✅ PAYLOAD AVEC UNIQUEMENT LES CHAMPS QUI EXISTENT
+    // 🔥 RÉGÉNÉRER LES META TAGS SEO
+    const { metaTitle, metaDescription } = generateMetaTags({
+      post: postTitle,
+      company,
+      location,
+      description,
+      responsibilities
+    });
+
+    // ✅ PAYLOAD AVEC LES VRAIS NOMS
     const webflowPayload = {
       items: [
         {
           id: id,
           fieldData: {
-            name: post,
+            post: postTitle.trim(),
             'description-du-poste': textToHTML(description),
-            'nom-de-lentreprise': company || '',
-            'lieu-travail': location || '',
-            'email-contact': email || '',
-            'telephone-contact': telephone || '',
-            'responsabilites': textToHTML(responsibilities),
-            'adresse-postal': address || '',
-            'salaire': '',
-            'profil': textToHTML(profile)
+            'nom-de-lentreprise': (company || '').trim(),
+            'lieu-travail': (location || '').trim(),
+            'email-contact': (email || '').trim(),
+            'telephone-contact': (telephone || '').trim(),
+            responsabilites: textToHTML(responsibilities),
+            'adresse-postal': (address || '').trim(),
+            salaire: '',
+            profil: textToHTML(profile),
+            
+            // SEO meta tags
+            'meta-title': metaTitle,
+            'meta-description': metaDescription
           }
         }
       ]
     };
 
-    console.log('📤 Modification avec les bons champs...');
+    console.log('📤 Modification...');
     const response = await axios.patch(
       `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live?skipInvalidFiles=true`,
       webflowPayload,
@@ -224,7 +278,7 @@ app.put('/api/offres/:id', async (req, res) => {
       }
     );
 
-    console.log('✅ Offre modifiée avec succès');
+    console.log('✅ Offre modifiée');
     res.json({ ok: true, item: response.data });
 
   } catch (err) {
@@ -245,8 +299,7 @@ app.delete('/api/offres/:id', async (req, res) => {
 
     console.log(`🗑️ Suppression de l'offre ${id}...`);
 
-    // Étape 1 : Dépublier l'item
-    console.log('Étape 1: Dépublication...');
+    // Étape 1 : Dépublier
     try {
       await axios.delete(
         `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live`,
@@ -255,18 +308,15 @@ app.delete('/api/offres/:id', async (req, res) => {
             'Authorization': `Bearer ${WEBFLOW_TOKEN}`,
             'Content-Type': 'application/json'
           },
-          data: {
-            itemIds: [id]
-          }
+          data: { itemIds: [id] }
         }
       );
-      console.log('✅ Item dépublié');
-    } catch (unpublishError) {
+      console.log('✅ Dépublié');
+    } catch (e) {
       console.log('⚠️ Erreur dépublication (peut-être déjà dépublié)');
     }
 
-    // Étape 2 : Supprimer l'item
-    console.log('Étape 2: Suppression...');
+    // Étape 2 : Supprimer
     await axios.delete(
       `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/${id}`,
       {
@@ -291,22 +341,26 @@ app.delete('/api/offres/:id', async (req, res) => {
 
 const server = app.listen(PORT, () => {
   console.log('========================================');
-  console.log(`✅ ValrJob API FINALE - Port ${PORT}`);
+  console.log(`✅ ValrJob API FONCTIONNEL - Port ${PORT}`);
   console.log('========================================');
-  console.log('✅ Tous les noms de champs corrigés');
-  console.log('✅ Champs meta-title/meta-description retirés');
+  console.log('🎯 CORRECTION CRITIQUE : post au lieu de name');
+  console.log('✅ Tous les champs corrigés');
+  console.log('✅ SEO automatique activé');
   console.log('========================================');
-  console.log('📋 Champs utilisés :');
-  console.log('   - name, slug (basic)');
-  console.log('   - description-du-poste (rich text)');
+  console.log('📋 Champs Webflow utilisés :');
+  console.log('   - post (titre)');
+  console.log('   - slug');
+  console.log('   - description-du-poste');
   console.log('   - nom-de-lentreprise');
   console.log('   - lieu-travail');
   console.log('   - email-contact');
   console.log('   - telephone-contact');
-  console.log('   - responsabilites (rich text)');
-  console.log('   - profil (rich text)');
+  console.log('   - responsabilites');
+  console.log('   - profil');
   console.log('   - adresse-postal');
   console.log('   - salaire');
+  console.log('   - meta-title');
+  console.log('   - meta-description');
   console.log('========================================');
   console.log(`TOKEN: ${process.env.WEBFLOW_TOKEN ? '✅' : '❌'}`);
   console.log(`COLLECTION: ${process.env.WEBFLOW_COLLECTION_ID ? '✅' : '❌'}`);
