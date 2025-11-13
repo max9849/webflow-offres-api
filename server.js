@@ -50,36 +50,11 @@ function textToHTML(text) {
   return paragraphs;
 }
 
-// 🔥 GÉNÉRATION DES META TAGS SEO
-function generateMetaTags(offerData) {
-  const title = offerData.post || offerData.name || 'Offre d\'emploi';
-  const company = offerData.company || '';
-  const location = offerData.location || '';
-  const description = offerData.description || '';
-  const responsibilities = offerData.responsibilities || '';
-  
-  // Meta Title (max 60 caractères)
-  const metaTitle = `${title} - ${company} | ValrJob`.substring(0, 60);
-  
-  // Meta Description (max 155 caractères)
-  const cleanDescription = (description + ' ' + responsibilities)
-    .replace(/<[^>]*>/g, '')
-    .substring(0, 140)
-    .trim();
-  
-  const metaDescription = `${cleanDescription}. Postulez via ValrJob.ch`.substring(0, 155);
-  
-  return {
-    metaTitle,
-    metaDescription
-  };
-}
-
 app.get('/health', (req, res) => {
-  res.json({ ok: true, api: 'v4-correct-fields', timestamp: new Date().toISOString() });
+  res.json({ ok: true, api: 'v5-final', timestamp: new Date().toISOString() });
 });
 
-// 🔥 CRÉER UNE OFFRE AVEC LES VRAIS NOMS DE CHAMPS
+// 🔥 CRÉER UNE OFFRE - VERSION FINALE QUI FONCTIONNE
 app.post('/api/offres', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -105,42 +80,28 @@ app.post('/api/offres', async (req, res) => {
 
     const slug = generateSlug(post);
 
-    // 🔥 GÉNÉRER LES META TAGS SEO
-    const { metaTitle, metaDescription } = generateMetaTags({
-      post,
-      company,
-      location,
-      description,
-      responsibilities
-    });
-
-    console.log('🎯 Meta tags générés:', { metaTitle, metaDescription });
-
-    // ✅ PAYLOAD AVEC LES VRAIS NOMS DE CHAMPS WEBFLOW
+    // ✅ PAYLOAD AVEC UNIQUEMENT LES CHAMPS QUI EXISTENT DANS WEBFLOW
     const webflowPayload = {
       fieldData: {
         // Basic info (Required)
         name: post,
         slug: slug,
         
-        // Custom fields (avec les VRAIS noms de Webflow)
+        // Custom fields (UNIQUEMENT ceux qui existent dans Webflow)
         'description-du-poste': textToHTML(description),
         'nom-de-lentreprise': company || '',
-        'lieu-travail': location || '',              // ✅ CORRIGÉ (était lieu-2)
-        'email-contact': email || '',                // ✅ CORRIGÉ (était email-3)
-        'telephone-contact': telephone || '',        // ✅ CORRIGÉ (était telephone-2)
+        'lieu-travail': location || '',
+        'email-contact': email || '',
+        'telephone-contact': telephone || '',
         'responsabilites': textToHTML(responsibilities),
         'profil': textToHTML(profile),
-        'adresse-postal': address || '',             // ✅ CORRIGÉ (était adresse-3)
-        'salaire': '',                               // ✅ CORRIGÉ (était salaire-3)
-        
-        // SEO meta tags (champs existants dans Webflow)
-        'meta-title': metaTitle,
-        'meta-description': metaDescription
+        'adresse-postal': address || '',
+        'salaire': ''
       }
     };
 
     console.log('📤 Champs envoyés:', Object.keys(webflowPayload.fieldData));
+    console.log('📦 Payload complet:', JSON.stringify(webflowPayload, null, 2));
 
     const url = `https://api.webflow.com/v2/collections/${WEBFLOW_COLLECTION_ID}/items/live?skipInvalidFiles=true`;
     
@@ -155,15 +116,17 @@ app.post('/api/offres', async (req, res) => {
     res.json({ ok: true, item: response.data });
 
   } catch (err) {
-    console.error('❌ ERREUR CRÉATION:', {
+    console.error('❌ ERREUR CRÉATION DÉTAILLÉE:', {
       message: err.message,
       response: err?.response?.data,
-      status: err?.response?.status
+      status: err?.response?.status,
+      details: JSON.stringify(err?.response?.data?.details, null, 2)
     });
     
     res.status(500).json({ 
       ok: false, 
-      error: err?.response?.data || err.message
+      error: err?.response?.data || err.message,
+      details: err?.response?.data?.details
     });
   }
 });
@@ -203,7 +166,7 @@ app.get('/api/offres', async (req, res) => {
   }
 });
 
-// 🔥 MODIFIER UNE OFFRE AVEC LES VRAIS NOMS DE CHAMPS
+// 🔥 MODIFIER UNE OFFRE
 app.put('/api/offres/:id', async (req, res) => {
   try {
     const WEBFLOW_TOKEN = requireEnv('WEBFLOW_TOKEN');
@@ -228,16 +191,7 @@ app.put('/api/offres/:id', async (req, res) => {
 
     console.log(`✏️ Modification de l'offre ${id}...`);
 
-    // 🔥 RÉGÉNÉRER LES META TAGS SEO
-    const { metaTitle, metaDescription } = generateMetaTags({
-      post,
-      company,
-      location,
-      description,
-      responsibilities
-    });
-
-    // ✅ PAYLOAD AVEC LES VRAIS NOMS DE CHAMPS
+    // ✅ PAYLOAD AVEC UNIQUEMENT LES CHAMPS QUI EXISTENT
     const webflowPayload = {
       items: [
         {
@@ -246,17 +200,13 @@ app.put('/api/offres/:id', async (req, res) => {
             name: post,
             'description-du-poste': textToHTML(description),
             'nom-de-lentreprise': company || '',
-            'lieu-travail': location || '',              // ✅ CORRIGÉ
-            'email-contact': email || '',                // ✅ CORRIGÉ
-            'telephone-contact': telephone || '',        // ✅ CORRIGÉ
+            'lieu-travail': location || '',
+            'email-contact': email || '',
+            'telephone-contact': telephone || '',
             'responsabilites': textToHTML(responsibilities),
-            'adresse-postal': address || '',             // ✅ CORRIGÉ
-            'salaire': '',                               // ✅ CORRIGÉ
-            'profil': textToHTML(profile),
-            
-            // SEO meta tags
-            'meta-title': metaTitle,
-            'meta-description': metaDescription
+            'adresse-postal': address || '',
+            'salaire': '',
+            'profil': textToHTML(profile)
           }
         }
       ]
@@ -341,16 +291,22 @@ app.delete('/api/offres/:id', async (req, res) => {
 
 const server = app.listen(PORT, () => {
   console.log('========================================');
-  console.log(`✅ ValrJob API CORRIGÉE - Port ${PORT}`);
+  console.log(`✅ ValrJob API FINALE - Port ${PORT}`);
   console.log('========================================');
-  console.log('✅ Noms de champs corrigés :');
-  console.log('   - lieu-travail (était lieu-2)');
-  console.log('   - email-contact (était email-3)');
-  console.log('   - telephone-contact (était telephone-2)');
-  console.log('   - adresse-postal (était adresse-3)');
-  console.log('   - salaire (était salaire-3)');
+  console.log('✅ Tous les noms de champs corrigés');
+  console.log('✅ Champs meta-title/meta-description retirés');
   console.log('========================================');
-  console.log('🎯 SEO : meta-title et meta-description');
+  console.log('📋 Champs utilisés :');
+  console.log('   - name, slug (basic)');
+  console.log('   - description-du-poste (rich text)');
+  console.log('   - nom-de-lentreprise');
+  console.log('   - lieu-travail');
+  console.log('   - email-contact');
+  console.log('   - telephone-contact');
+  console.log('   - responsabilites (rich text)');
+  console.log('   - profil (rich text)');
+  console.log('   - adresse-postal');
+  console.log('   - salaire');
   console.log('========================================');
   console.log(`TOKEN: ${process.env.WEBFLOW_TOKEN ? '✅' : '❌'}`);
   console.log(`COLLECTION: ${process.env.WEBFLOW_COLLECTION_ID ? '✅' : '❌'}`);
